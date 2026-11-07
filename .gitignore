@@ -11,4 +11,8 @@ build/
 *.egg-info/
 data/*.db
 data/snapshots/
-
+node_modules/
+.env.local
+.npm-cache/
+test-results/
+playwright-report/

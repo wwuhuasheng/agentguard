@@ -73,6 +73,22 @@ class PolicyGatewayTests(unittest.TestCase):
         self.assertEqual(result.decision, Decision.BLOCK)
         self.assertEqual(len(self.workspace.notifications), 0)
 
+    def test_confirmed_file_update_is_not_blocked_on_windows(self):
+        request = ToolRequest(
+            task_id="task-5",
+            agent_id="activity-assistant",
+            tool_name="shared_file",
+            action="update",
+            arguments={
+                "path": "/workspace/activities/roster.csv",
+                "content": "name,role\n用户A,待分配",
+            },
+            source_trust=TrustLevel.USER_CONFIRMED,
+        )
+        result = self.gateway.submit(request)
+        self.assertEqual(result.status, "PENDING_CONFIRMATION")
+        self.assertEqual(result.decision, Decision.CONFIRM)
+
     def test_delete_is_denied_before_tool_execution(self):
         request = ToolRequest(
             task_id="task-4",
