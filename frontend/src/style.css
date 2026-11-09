@@ -713,6 +713,23 @@ main {
 .task-form textarea {
   width: 100%;
 }
+.activity-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 14px;
+}
+.activity-time-row {
+  display: flex;
+  gap: 8px;
+}
+.activity-time-row input {
+  flex: 1;
+  min-width: 0;
+}
+.activity-time-row select {
+  flex: none;
+  min-width: 86px;
+}
 .scenario-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2374,6 +2391,9 @@ footer .text-button {
   }
   .scenario-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .activity-input-grid {
+    grid-template-columns: 1fr;
   }
   .scenario-card {
     padding: 15px;

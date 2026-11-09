@@ -8,13 +8,16 @@ memory and performs every policy decision through the real MCPGateway.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from re import fullmatch
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from backend.agent_core import ActivitySpec
 from backend.api.app import create_app as create_core_app
 from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
@@ -32,12 +35,20 @@ _ALLOW_ORIGINS = [
 ]
 
 
+class ActivityInput(BaseModel):
+    starts_at: datetime
+    location: str = Field(min_length=1, max_length=120)
+    recipient: str = Field(min_length=3, max_length=254)
+    recipient_count: int = Field(ge=1, le=1000)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str = ""
     scenario: str = "normal"
-    files: list[Dict[str, Any]] = []
-    permissions: list[str] = []
+    files: list[Dict[str, Any]] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    activity: Optional[ActivityInput] = None
 
 
 class ApprovalDecision(BaseModel):
@@ -98,6 +109,25 @@ def create_app() -> FastAPI:
 
     @app.post("/api/tasks", status_code=201)
     def create_task(payload: TaskCreate) -> Dict[str, Any]:
+        if payload.scenario == "activity":
+            if not payload.description.strip():
+                raise HTTPException(
+                    status_code=422, detail="notice content is required"
+                )
+            if payload.activity is not None:
+                starts_at = payload.activity.starts_at
+                if starts_at.tzinfo is None or starts_at.utcoffset() is None:
+                    raise HTTPException(status_code=422, detail="timezone is required")
+                if starts_at <= datetime.now(timezone.utc):
+                    raise HTTPException(
+                        status_code=422, detail="activity time must be in the future"
+                    )
+                if not fullmatch(
+                    r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.activity.recipient
+                ):
+                    raise HTTPException(
+                        status_code=422, detail="valid recipient email is required"
+                    )
         try:
             return service.create_task(
                 title=payload.title,
@@ -105,6 +135,18 @@ def create_app() -> FastAPI:
                 scenario=payload.scenario,
                 files=payload.files,
                 permissions=payload.permissions,
+                activity=(
+                    ActivitySpec(
+                        title=payload.title,
+                        starts_at=payload.activity.starts_at.isoformat(),
+                        location=payload.activity.location,
+                        recipient=payload.activity.recipient,
+                        recipient_count=payload.activity.recipient_count,
+                        notice_content=payload.description,
+                    )
+                    if payload.activity is not None
+                    else None
+                ),
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error

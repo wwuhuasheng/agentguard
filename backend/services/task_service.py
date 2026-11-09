@@ -14,9 +14,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
+from backend.agent_core import (
+    ActivitySpec,
+    DeterministicAgentArtsAdapter,
+    TaskCoordinator,
+)
 from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.mock_tools import MockWorkspace
-from backend.models import AuditEvent, ToolRequest, TrustLevel
+from backend.models import AuditEvent, TaskRecord, TaskStatus, ToolRequest, TrustLevel
 from backend.policy_engine import PassportIssuer
 from backend.recovery import SnapshotManager
 
@@ -55,6 +60,7 @@ class TaskService:
         self.snapshots = snapshots or SnapshotManager(self.workspace)
         self._now_fn = now_fn
         self.gateway: Optional[MCPGateway] = None
+        self.coordinator: Optional[TaskCoordinator] = None
         self._tasks: Dict[str, Dict[str, object]] = {}
         self._approvals: Dict[str, Dict[str, object]] = {}
         self._incidents: Dict[str, Dict[str, object]] = {}
@@ -65,6 +71,7 @@ class TaskService:
     # ------------------------------------------------------------------ setup
     def bind_gateway(self, gateway: MCPGateway) -> None:
         self.gateway = gateway
+        self.coordinator = TaskCoordinator(gateway, DeterministicAgentArtsAdapter())
 
     def register_tools(self, registry: ToolRegistry) -> None:
         """Register workspace tools; file updates route through failure logic."""
@@ -191,15 +198,23 @@ class TaskService:
         scenario: str = "normal",
         files: Optional[List[Dict[str, object]]] = None,
         permissions: Optional[List[str]] = None,
+        activity: Optional[ActivitySpec] = None,
     ) -> Dict[str, object]:
-        if scenario not in {"normal", "approval", "block", "recovery"}:
-            raise ValueError("scenario must be normal | approval | block | recovery")
+        if scenario not in {"normal", "approval", "block", "recovery", "activity"}:
+            raise ValueError(
+                "scenario must be normal | approval | block | recovery | activity"
+            )
+        if scenario == "activity" and activity is None:
+            raise ValueError("activity parameters are required")
         task = self._new_task(
             title, description, scenario, files or [], permissions or []
         )
         self._tasks[task["task_id"]] = task
         try:
-            if scenario == "normal":
+            if scenario == "activity":
+                assert activity is not None
+                self._run_activity(task, activity)
+            elif scenario == "normal":
                 self._run_normal(task)
             elif scenario == "approval":
                 self._run_approval(task)
@@ -232,6 +247,33 @@ class TaskService:
         return bound
 
     # -------------------------------------------------------------- scenarios
+    def _run_activity(self, task: Dict[str, object], activity: ActivitySpec) -> None:
+        """Run user-supplied fields through the real task coordinator."""
+        assert self.coordinator is not None
+        core = self.coordinator.create_activity(activity, task_id=str(task["task_id"]))
+        for request in self.coordinator.requests_for(str(task["task_id"])):
+            self._requests[request.request_id] = request
+        self._sync_activity(task, core)
+
+    def _sync_activity(self, task: Dict[str, object], core: TaskRecord) -> None:
+        status_map = {
+            TaskStatus.CREATED: "ANALYZING",
+            TaskStatus.RUNNING: "EXECUTING",
+            TaskStatus.WAITING_CONFIRMATION: "WAITING_APPROVAL",
+            TaskStatus.SUCCEEDED: "COMPLETED",
+            TaskStatus.BLOCKED: "BLOCKED",
+            TaskStatus.FAILED: "FAILED",
+            TaskStatus.RESTORED: "RECOVERED",
+            TaskStatus.CANCELLED: "CANCELLED",
+        }
+        self._set_status(task, status_map[core.status])
+        task["agent_plan"] = core.plan_summary
+        task["passport_id"] = core.plan_summary["task_passport"]["passport_id"]
+        if core.pending_request_id:
+            assert self.gateway is not None
+            request = self.gateway.pending[core.pending_request_id].request
+            self._open_approval(task, request)
+
     def _run_normal(self, task: Dict[str, object]) -> None:
         calendar = ToolRequest(
             task_id=str(task["task_id"]),
@@ -370,7 +412,12 @@ class TaskService:
         return "执行 {} / {}".format(request.tool_name, request.action)
 
     def _open_approval(self, task: Dict[str, object], request: ToolRequest) -> None:
-        expires = self._now_fn() + timedelta(seconds=APPROVAL_TTL_SECONDS)
+        assert self.gateway is not None
+        pending = self.gateway.pending.get(request.request_id)
+        service_expires = self._now_fn() + timedelta(seconds=APPROVAL_TTL_SECONDS)
+        expires = (
+            min(pending.expires_at, service_expires) if pending else service_expires
+        )
         self._approvals[request.request_id] = {
             "approval_id": request.request_id,
             "request_id": request.request_id,
@@ -395,8 +442,12 @@ class TaskService:
         if self._now_fn() >= datetime.fromisoformat(str(approval["expires_at"])):
             approval["status"] = "EXPIRED"
             approval["resolved_at"] = self._now_fn().isoformat()
-            self.gateway.pending.pop(approval_id, None)
             task = self._tasks.get(str(approval["task_id"]))
+            if task is not None and task["scenario"] == "activity":
+                assert self.coordinator is not None
+                self.coordinator.cancel(str(task["task_id"]))
+            else:
+                self.gateway.pending.pop(approval_id, None)
             if task is not None:
                 self._set_status(task, "EXPIRED")
                 self._record_service_event(
@@ -407,10 +458,20 @@ class TaskService:
                 )
             return dict(approval)
 
+        task = self._tasks.get(str(approval["task_id"]))
+        if task is not None and task["scenario"] == "activity":
+            assert self.coordinator is not None
+            core = self.coordinator.resolve(str(task["task_id"]), approved)
+            approval["status"] = "APPROVED" if approved else "REJECTED"
+            approval["resolved_at"] = self._now_fn().isoformat()
+            self._sync_activity(task, core)
+            if not approved:
+                self._set_status(task, "REJECTED")
+            return dict(approval)
+
         execution = self.gateway.resolve(approval_id, approved)
         approval["status"] = "APPROVED" if approved else "REJECTED"
         approval["resolved_at"] = self._now_fn().isoformat()
-        task = self._tasks.get(str(approval["task_id"]))
         if task is None:  # pragma: no cover
             return dict(approval)
         if not approved:

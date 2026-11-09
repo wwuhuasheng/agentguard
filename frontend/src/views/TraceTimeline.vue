@@ -211,6 +211,29 @@ async function start() {
     </section>
     <aside class="trace-aside">
       <RiskCard v-if="evidence" :event="evidence" />
+      <section v-if="s.current.agent_plan" class="panel padded">
+        <span class="eyebrow">AGENT PLAN / TASK PASSPORT</span>
+        <h3>规划与授权证据</h3>
+        <p class="helper">当前由本地离线适配器生成计划；此处不代表已接入华为云 AgentArts。</p>
+        <dl class="context-list">
+          <div>
+            <dt>规划来源</dt>
+            <dd>{{ s.current.agent_plan.provider }}</dd>
+          </div>
+          <div>
+            <dt>授权步骤</dt>
+            <dd>{{ s.current.agent_plan.step_count }}</dd>
+          </div>
+          <div>
+            <dt>护照 ID</dt>
+            <dd class="mono">{{ s.current.passport_id?.slice(0, 8) }}</dd>
+          </div>
+        </dl>
+        <div v-for="agent in s.current.agent_plan.agent_evidence" :key="agent.role" class="approval-reason">
+          <ShieldCheck :size="17" />
+          <div><code>{{ agent.role }}</code><p>{{ agent.conclusion }}</p></div>
+        </div>
+      </section>
       <section class="panel padded">
         <span class="eyebrow">TRACE CONTEXT</span>
         <h3>{{ s.current.title }}</h3>

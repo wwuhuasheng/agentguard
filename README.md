@@ -43,6 +43,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - 审批摘要绑定，避免批准后偷偷换参数；
 - 统一审计事件、模拟工具、失败恢复与熔断；
 - Vue 3 可交互演示控制台；
+- Live 模式按用户填写的活动参数生成三步事务与任务护照，支持连续审批及可追踪的执行结果；
 - AgentArts 可接入的 Streamable HTTP MCP Server 与 ARM64 部署配置。
 
 主链路命令行演示可用 `python3 scripts/run_task_demo.py`；`scripts/run_demo.py` 仅用于单独观察底层策略规则。

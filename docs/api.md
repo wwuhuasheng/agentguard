@@ -53,6 +53,23 @@ POST /api/tasks
 - `approval`：40 人通知触发 `CONFIRM`，等待 `/decision`。
 - `block`：外部不可信请求发送敏感字段到外部邮箱，预期 `BLOCK`。
 - `recovery`：共享文件更新先确认；批准后连续失败三次，熔断并恢复快照。
+- `activity`：使用用户提交的时间、地点、通知对象和人数生成三步事务；共享文件更新须确认，超过 30 人通知还会再次确认。返回 `agent_plan` 与 `passport_id` 供前端展示。
+
+Live 活动任务示例（时间必须带时区且晚于当前时间）：
+
+```json
+{
+  "title": "周末读书会",
+  "description": "请提前十分钟到场",
+  "scenario": "activity",
+  "activity": {
+    "starts_at": "2026-11-15T10:00:00+08:00",
+    "location": "社区图书馆",
+    "recipient": "readers@example.org",
+    "recipient_count": 12
+  }
+}
+```
 
 `files` 与 `permissions` 是演示元数据。当前运行时不读取文件内容，也不将其提升为真实授权。
 
@@ -88,6 +105,7 @@ POST /api/approvals/{approval_id}/decision
 ```
 
 Task 状态包含 `EXECUTING`、`WAITING_APPROVAL`、`COMPLETED`、`BLOCKED`、`REJECTED`、`EXPIRED`、`RECOVERING`、`RECOVERED`、`FAILED`。
+`activity` 任务还包含 `agent_plan`（本地规划来源、三角色证据、步骤）和 `passport_id`。这证明的是本地离线链路，不等于已在 AgentArts 上部署。
 
 ## AuditEvent
 

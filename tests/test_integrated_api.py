@@ -1,8 +1,13 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
 from backend.api.server import create_app
+
+
+def future_start() -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 
 
 class IntegratedAPITests(unittest.TestCase):
@@ -22,7 +27,7 @@ class IntegratedAPITests(unittest.TestCase):
             "/core/api/tasks",
             json={
                 "title": "志愿活动",
-                "starts_at": "2026-11-10T09:00:00+08:00",
+                "starts_at": future_start(),
                 "location": "社区服务中心",
                 "recipient": "participants@example.org",
                 "recipient_count": 2,
@@ -109,6 +114,145 @@ class IntegratedAPITests(unittest.TestCase):
                 self.client.get(f"/api/tasks/{task['task_id']}").json()["status"],
                 expected_status,
             )
+
+    def test_live_activity_uses_user_fields_and_resumes_after_approval(self):
+        response = self.client.post(
+            "/api/tasks",
+            json={
+                "title": "周末读书会",
+                "description": "请提前到场签到",
+                "scenario": "activity",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区图书馆",
+                    "recipient": "readers@example.org",
+                    "recipient_count": 12,
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        task = response.json()
+        self.assertEqual(task["status"], "WAITING_APPROVAL")
+        self.assertEqual(task["agent_plan"]["step_count"], 3)
+        self.assertEqual(len(task["agent_plan"]["agent_evidence"]), 3)
+        self.assertTrue(task["passport_id"])
+        first_tool = next(
+            e["payload"]["tool_request"]
+            for e in task["events"]
+            if e["event_type"] == "POLICY_DECISION"
+        )
+        self.assertEqual(first_tool["arguments"]["location"], "社区图书馆")
+        approval = self.client.get("/api/approvals").json()[0]
+        self.assertEqual(approval["tool_request"]["tool_name"], "shared_file")
+        self.client.post(
+            f"/api/approvals/{approval['approval_id']}/decision",
+            json={"decision": "APPROVE"},
+        )
+        completed = self.client.get(f"/api/tasks/{task['task_id']}").json()
+        self.assertEqual(completed["status"], "COMPLETED")
+        notice = self.app.state.runtime.service.workspace.notifications[0]
+        self.assertEqual(notice["recipient"], "readers@example.org")
+        self.assertEqual(notice["content"], "请提前到场签到")
+
+    def test_live_activity_bulk_notice_requires_second_approval(self):
+        task = self.client.post(
+            "/api/tasks",
+            json={
+                "title": "大型活动",
+                "description": "活动提醒",
+                "scenario": "activity",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区中心",
+                    "recipient": "team@example.org",
+                    "recipient_count": 40,
+                },
+            },
+        ).json()
+        first = self.client.get("/api/approvals").json()[0]
+        self.client.post(
+            f"/api/approvals/{first['approval_id']}/decision",
+            json={"decision": "APPROVE"},
+        )
+        self.assertEqual(
+            self.client.get(f"/api/tasks/{task['task_id']}").json()["status"],
+            "WAITING_APPROVAL",
+        )
+        second = self.client.get("/api/approvals").json()[0]
+        self.assertNotEqual(first["approval_id"], second["approval_id"])
+        self.assertEqual(second["tool_request"]["tool_name"], "send_notice")
+        self.client.post(
+            f"/api/approvals/{second['approval_id']}/decision",
+            json={"decision": "REJECT"},
+        )
+        self.assertEqual(
+            self.client.get(f"/api/tasks/{task['task_id']}").json()["status"],
+            "REJECTED",
+        )
+        self.assertEqual(self.app.state.runtime.service.workspace.notifications, [])
+        self.assertEqual(self.app.state.runtime.service.workspace.calendar_events, [])
+        self.assertEqual(
+            self.app.state.runtime.service.workspace.files[
+                "/workspace/activities/plan.md"
+            ],
+            "活动计划 v1",
+        )
+
+    def test_live_activity_requires_structured_parameters(self):
+        missing = self.client.post(
+            "/api/tasks", json={"title": "不完整任务", "scenario": "activity"}
+        )
+        self.assertEqual(missing.status_code, 422)
+        naive = self.client.post(
+            "/api/tasks",
+            json={
+                "title": "不完整任务",
+                "scenario": "activity",
+                "activity": {
+                    "starts_at": future_start().split("+")[0],
+                    "location": "社区中心",
+                    "recipient": "team@example.org",
+                    "recipient_count": 12,
+                },
+            },
+        )
+        self.assertEqual(naive.status_code, 422)
+
+    def test_live_activity_disallowed_domain_is_blocked_before_notice(self):
+        task = self.client.post(
+            "/api/tasks",
+            json={
+                "title": "错误接收方",
+                "description": "活动提醒",
+                "scenario": "activity",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区中心",
+                    "recipient": "outside@unapproved.example",
+                    "recipient_count": 12,
+                },
+            },
+        ).json()
+        first = self.client.get("/api/approvals").json()[0]
+        self.client.post(
+            f"/api/approvals/{first['approval_id']}/decision",
+            json={"decision": "APPROVE"},
+        )
+        result = self.client.get(f"/api/tasks/{task['task_id']}").json()
+        self.assertEqual(result["status"], "BLOCKED")
+        blocked = [
+            event
+            for event in result["events"]
+            if event["event_type"] == "POLICY_DECISION"
+            and event["payload"]["decision"] == "BLOCK"
+        ]
+        self.assertIn(
+            "RECIPIENT_DOMAIN_DENIED",
+            {reason["code"] for reason in blocked[0]["payload"]["reasons"]},
+        )
+        workspace = self.app.state.runtime.service.workspace
+        self.assertEqual(workspace.notifications, [])
+        self.assertEqual(workspace.calendar_events, [])
 
 
 if __name__ == "__main__":

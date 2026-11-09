@@ -22,11 +22,14 @@ class TaskCoordinator:
         self.tasks: Dict[str, TaskRecord] = {}
         self._plans: Dict[str, OrchestrationPlan] = {}
 
-    def create_activity(self, spec: ActivitySpec) -> TaskRecord:
+    def create_activity(
+        self, spec: ActivitySpec, task_id: Optional[str] = None
+    ) -> TaskRecord:
         placeholder = TaskRecord(
             intent="CREATE_ACTIVITY",
             status=TaskStatus.CREATED,
             total_steps=0,
+            **({"task_id": task_id} if task_id else {}),
         )
         plan = self.planner.plan_activity(placeholder.task_id, spec)
         passport, bound_steps = self.passport_issuer.issue(
@@ -49,6 +52,10 @@ class TaskCoordinator:
 
     def get(self, task_id: str) -> Optional[TaskRecord]:
         return self.tasks.get(task_id)
+
+    def requests_for(self, task_id: str):
+        """Return the exact authorized requests for presentation/audit adapters."""
+        return tuple(self._plans[task_id].steps)
 
     def resolve(self, task_id: str, approved: bool) -> TaskRecord:
         task = self._require_waiting_task(task_id)
