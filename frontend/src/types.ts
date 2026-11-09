@@ -1,4 +1,4 @@
-// 前七个对象沿用 A 的 domain.py。Task / Approval / Incident 为待确认的前端适配对象。
+// 与后端 HTTP 契约对齐的前端类型。
 export type Decision = 'ALLOW' | 'CONFIRM' | 'BLOCK'
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type TrustLevel =
@@ -52,7 +52,13 @@ export interface AuditEvent {
     reasons?: RiskEvidence[]
   }
 }
-export type Scenario = 'normal' | 'approval' | 'block' | 'recovery'
+export type Scenario = 'normal' | 'approval' | 'block' | 'recovery' | 'activity'
+export interface ActivityInput {
+  starts_at: string
+  location: string
+  recipient: string
+  recipient_count: number
+}
 export type TaskStatus =
   | 'ANALYZING'
   | 'EXECUTING'
@@ -82,6 +88,13 @@ export interface Task {
   permissions: string[]
   events: AuditEvent[]
   replay: boolean
+  passport_id?: string
+  agent_plan?: {
+    provider: string
+    step_count: number
+    steps: { agent_id: string; tool_name: string; action: string }[]
+    agent_evidence: { role: string; conclusion: string; evidence: Record<string, unknown> }[]
+  }
 }
 export interface Approval {
   approval_id: string

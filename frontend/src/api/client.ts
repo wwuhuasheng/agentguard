@@ -1,4 +1,4 @@
-import type { Task, AuditEvent, Approval, Incident, FileMeta, CurrentUser } from '../types'
+import type { Task, AuditEvent, Approval, Incident, FileMeta, CurrentUser, ActivityInput } from '../types'
 export const configuredMode = import.meta.env.VITE_DATA_MODE === 'live' ? 'live' : 'mock'
 const base = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -7,11 +7,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init.headers },
     signal: AbortSignal.timeout(10000),
   })
-  if (!response.ok) throw new Error(`接口返回 ${response.status}：${path}`)
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    const detail = typeof body?.detail === 'string' ? `：${body.detail}` : ''
+    throw new Error(`接口返回 ${response.status}：${path}${detail}`)
+  }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
-// 待 A 确认的 HTTP 契约。失败直接报错，不自动切换 Mock。
+// Live API 契约。失败直接报错，不自动切换 Mock。
 export const liveApi = {
   currentUser: () => request<CurrentUser>('/api/me'),
   async tasks() {
@@ -25,6 +29,7 @@ export const liveApi = {
     scenario: string
     files: FileMeta[]
     permissions: string[]
+    activity?: ActivityInput
   }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(input) }),
   task: (id: string) => request<Task>(`/api/tasks/${encodeURIComponent(id)}`),
   events: (id: string) => request<AuditEvent[]>(`/api/tasks/${encodeURIComponent(id)}/events`),

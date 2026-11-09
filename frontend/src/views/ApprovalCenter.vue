@@ -158,7 +158,7 @@ function viewTask() {
           <pre class="json-preview">{{ display(active.tool_request) }}</pre>
         </details>
         <p class="helper">
-          参数修改与重新校验接口尚待同学 A 实现，当前版本支持批准、拒绝和到期取消。
+          当前版本只支持批准、拒绝和到期取消；需要修改参数时，请重新创建任务。
         </p>
         <p v-if="active.resolved_at" class="helper">处理时间：{{ dateTime(active.resolved_at) }}</p>
       </div>
@@ -191,8 +191,8 @@ function viewTask() {
       }}
     </p>
     <RouterLink to="/" class="button primary"
-      >{{ tab === 'pending' ? '创建一个人工确认场景' : '返回控制台'
+      >{{ tab === 'pending' ? (s.mode === 'live' ? '创建活动任务' : '创建一个人工确认场景') : '返回控制台'
       }}<ArrowRight :size="15" /></RouterLink
-    ><span class="helper">演示：选择「人工确认」→ 启动任务 → 等待审批卡片出现。</span>
+    ><span v-if="s.mode === 'mock'" class="helper">演示：选择「人工确认」→ 启动任务 → 等待审批卡片出现。</span>
   </div>
 </template>

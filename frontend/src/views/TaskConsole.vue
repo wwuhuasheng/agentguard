@@ -23,9 +23,14 @@ import StatusBadge from '../components/StatusBadge.vue'
 import { time } from '../labels'
 const s = useConsoleStore(),
   router = useRouter(),
-  scenario = ref<Scenario>('approval'),
+  scenario = ref<Scenario>(s.mode === 'live' ? 'activity' : 'approval'),
   title = ref('社区公益活动安排'),
-  description = ref('根据活动资料创建日程，向本次活动参与者发送通知，并更新共享排班文件。'),
+  description = ref('活动将于指定时间开始，请提前十分钟到场。'),
+  startsAt = ref(''),
+  timezoneOffset = ref('+08:00'),
+  location = ref('社区服务中心'),
+  recipient = ref('participants@example.org'),
+  recipientCount = ref(12),
   files = ref<FileMeta[]>([]),
   input = ref<HTMLInputElement>(),
   form = ref<HTMLElement>(),
@@ -63,11 +68,26 @@ const recent = computed(() =>
 async function submit() {
   if (!title.value.trim() || !description.value.trim())
     return s.notify('请填写任务名称和任务描述。')
+  if (s.mode === 'live' && (!startsAt.value || !location.value.trim() || !recipient.value.trim()))
+    return s.notify('请填写活动时间、地点和通知对象。')
+  const startsAtWithZone = `${startsAt.value}:00${timezoneOffset.value}`
+  const start = s.mode === 'live' ? new Date(startsAtWithZone) : null
+  if (start && (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()))
+    return s.notify('活动时间必须晚于当前时间。')
   const t = await s.create(
     scenario.value,
     title.value.trim(),
     description.value.trim(),
-    files.value
+    files.value,
+    false,
+    start
+      ? {
+          starts_at: startsAtWithZone,
+          location: location.value.trim(),
+          recipient: recipient.value.trim(),
+          recipient_count: Number(recipientCount.value),
+        }
+      : undefined
   )
   if (t) void router.push('/trace')
 }
@@ -145,7 +165,7 @@ function focusForm() {
       <div class="panel-heading">
         <div>
           <h2>创建执行任务</h2>
-          <p>选择场景，体验可信执行闭环</p>
+          <p>{{ s.mode === 'live' ? '填写活动参数，运行可信执行闭环' : '选择场景，体验可信执行闭环' }}</p>
         </div>
         <span class="section-number">01 / CREATE</span>
       </div>
@@ -159,16 +179,46 @@ function focusForm() {
           required
           placeholder="给任务起个名字"
         /><label class="field-label" for="task-description"
-          >你希望 Agent 做什么 <span>*</span></label
+          >{{ s.mode === 'live' ? '通知内容' : '你希望 Agent 做什么' }} <span>*</span></label
         ><textarea
           id="task-description"
           v-model="description"
           maxlength="2000"
           required
           rows="3"
-          placeholder="描述任务目标与可使用的数据范围"
+          :placeholder="s.mode === 'live' ? '填写将发送给参与者的通知内容' : '描述任务目标与可使用的数据范围'"
         ></textarea
-        ><template v-if="s.mode === 'mock'"
+        ><template v-if="s.mode === 'live'">
+          <div class="row between field-label">
+            <span>实际活动参数</span><span class="muted small">用于生成本次任务的工具请求</span>
+          </div>
+          <div class="activity-input-grid">
+            <div>
+              <label class="field-label" for="activity-time">活动时间 <span>*</span></label>
+              <div class="activity-time-row">
+                <input id="activity-time" v-model="startsAt" type="datetime-local" required />
+                <select v-model="timezoneOffset" aria-label="活动时区">
+                  <option value="+08:00">UTC+8</option>
+                  <option value="+09:00">UTC+9</option>
+                  <option value="+00:00">UTC+0</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="field-label" for="activity-location">活动地点 <span>*</span></label>
+              <input id="activity-location" v-model="location" maxlength="120" required />
+            </div>
+            <div>
+              <label class="field-label" for="activity-recipient">通知接收地址 <span>*</span></label>
+              <input id="activity-recipient" v-model="recipient" type="email" required />
+            </div>
+            <div>
+              <label class="field-label" for="activity-count">接收人数 <span>*</span></label>
+              <input id="activity-count" v-model.number="recipientCount" type="number" min="1" max="1000" required />
+            </div>
+          </div>
+          <p class="helper">当前演示策略仅允许 example.org 域名；超过 30 人发送通知需二次审批。这里使用内存模拟工具，不会真实发送邮件。</p>
+        </template><template v-else
           ><div class="row between field-label">
             <span>演示场景</span><span class="muted small">由预置事件驱动</span>
           </div>

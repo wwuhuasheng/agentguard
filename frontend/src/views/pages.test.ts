@@ -20,13 +20,15 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
-async function render(component: any) {
+async function render(component: any, live = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const s = useConsoleStore()
   await s.initialize()
+  if (live) s.mode = 'live'
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
@@ -57,6 +59,44 @@ describe('rendered page interactions', () => {
     await flushPromises()
     expect(s.tasks[0]!.title).toBe('UI test task')
     expect(s.tasks[0]!.scenario).toBe('approval')
+  })
+  it('submits structured activity fields in live mode', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        task_id: 'live-activity-1',
+        title: '周末读书会',
+        description: '请提前到场',
+        scenario: 'activity',
+        status: 'WAITING_APPROVAL',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        files: [],
+        permissions: [],
+        events: [],
+        replay: false,
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const s = await render(TaskConsole, true)
+    await wrapper!.get('#task-name').setValue('周末读书会')
+    await wrapper!.get('#task-description').setValue('请提前到场')
+    await wrapper!.get('#activity-time').setValue('2026-11-15T10:00')
+    await wrapper!.get('#activity-location').setValue('社区图书馆')
+    await wrapper!.get('#activity-recipient').setValue('readers@example.org')
+    await wrapper!.get('#activity-count').setValue('40')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    const [url, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/api/tasks')
+    const body = JSON.parse(String(request.body))
+    expect(body.scenario).toBe('activity')
+    expect(body.activity.location).toBe('社区图书馆')
+    expect(body.activity.recipient).toBe('readers@example.org')
+    expect(body.activity.recipient_count).toBe(40)
+    expect(body.activity.starts_at).toBe('2026-11-15T10:00:00+08:00')
+    expect(s.tasks[0]!.task_id).toBe('live-activity-1')
   })
   it('filters task records by title', async () => {
     await render(TaskConsole)
