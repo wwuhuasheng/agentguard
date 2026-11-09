@@ -33,7 +33,9 @@ class TaskServiceNormalTests(unittest.TestCase):
         self.assertIn("POLICY_DECISION", event_types)
         self.assertIn("TOOL_EXECUTED", event_types)
         decisions = [
-            event for event in task["events"] if event["event_type"] == "POLICY_DECISION"
+            event
+            for event in task["events"]
+            if event["event_type"] == "POLICY_DECISION"
         ]
         for decision in decisions:
             self.assertIn("tool_request", decision["payload"])
@@ -50,7 +52,9 @@ class TaskServiceNormalTests(unittest.TestCase):
                 event["payload"]["tool_request"]["tool_name"], "send_notice"
             )
         decisions = [
-            event for event in task["events"] if event["event_type"] == "POLICY_DECISION"
+            event
+            for event in task["events"]
+            if event["event_type"] == "POLICY_DECISION"
         ]
         self.assertTrue(
             any(
@@ -90,7 +94,7 @@ class TaskServiceApprovalTests(unittest.TestCase):
         self.assertEqual(len(self.service.workspace.notifications), 0)
 
     def test_second_decision_is_rejected_as_conflict(self):
-        task = self.service.create_task("群发通知", "40 人通知", "approval")
+        self.service.create_task("群发通知", "40 人通知", "approval")
         approval = self.service.list_approvals()[0]
         self.service.decide(approval["approval_id"], approved=True)
         with self.assertRaises(PermissionError):
