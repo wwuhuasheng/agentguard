@@ -32,6 +32,7 @@ class ActivityTaskBody(BaseModel):
 def create_app(
     gateway: Optional[MCPGateway] = None,
     coordinator: Optional[TaskCoordinator] = None,
+    expose_gateway_approval: bool = True,
 ) -> FastAPI:
     runtime_gateway = gateway or build_runtime()[0]
     runtime_coordinator = coordinator or TaskCoordinator(
@@ -89,12 +90,14 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    @app.post("/api/approvals/{request_id}/decision")
-    def resolve_approval(request_id: str, body: ApprovalBody) -> Dict[str, Any]:
-        try:
-            return runtime_gateway.resolve(request_id, body.approved).to_dict()
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if expose_gateway_approval:
+
+        @app.post("/api/approvals/{request_id}/decision")
+        def resolve_approval(request_id: str, body: ApprovalBody) -> Dict[str, Any]:
+            try:
+                return runtime_gateway.resolve(request_id, body.approved).to_dict()
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/tasks/{task_id}/events")
     def task_events(task_id: str) -> List[Dict[str, Any]]:

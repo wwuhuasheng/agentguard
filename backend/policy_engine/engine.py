@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
 
 from backend.models import (
@@ -62,17 +62,23 @@ class PolicyEngine:
     def evaluate(self, request: ToolRequest) -> PolicyDecision:
         passport_error = validate_passport(request, self.passports)
         if passport_error:
-            return self._decision(
-                request,
-                Decision.BLOCK,
-                None,
+            policy = self.repository.find(request.agent_id, request.tool_name)
+            reasons = [
                 self._evidence(
                     "TASK_PASSPORT_VIOLATION",
                     passport_error,
                     RiskLevel.CRITICAL,
                     "passport_id",
                     request.passport_id,
-                ),
+                )
+            ]
+            if policy and request.action in policy.get("allowed_actions", []):
+                reasons.extend(self._blocking_checks(request, policy))
+            return self._decision(
+                request,
+                Decision.BLOCK,
+                policy,
+                reasons,
             )
         policy = self.repository.find(request.agent_id, request.tool_name)
         if policy is None:
@@ -196,8 +202,12 @@ class PolicyEngine:
         allowed_prefixes = policy.get("allowed_path_prefixes", [])
         path_value = arguments.get("path")
         if path_value and allowed_prefixes:
-            candidate = Path(path_value)
-            roots = [Path(prefix) for prefix in allowed_prefixes]
+            # Normalize both slash styles, then compare path components.
+            candidate = PurePosixPath(str(path_value).replace("\\", "/"))
+            roots = [
+                PurePosixPath(str(prefix).replace("\\", "/"))
+                for prefix in allowed_prefixes
+            ]
             in_scope = candidate.is_absolute() and any(
                 candidate == root or root in candidate.parents for root in roots
             )

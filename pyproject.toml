@@ -25,6 +25,7 @@ packages = [
   "backend.models",
   "backend.policy_engine",
   "backend.recovery",
+  "backend.services",
 ]
 
 [tool.ruff]

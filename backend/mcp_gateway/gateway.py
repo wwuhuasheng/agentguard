@@ -18,6 +18,13 @@ class PendingApproval:
     expires_at: datetime
 
 
+@dataclass
+class ApprovedRetry:
+    request: ToolRequest
+    request_fingerprint: str
+    remaining: int
+
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._handlers: Dict[str, ToolHandler] = {}
@@ -53,6 +60,7 @@ class MCPGateway:
         self.approval_ttl_seconds = approval_ttl_seconds
         self.now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self.pending: Dict[str, PendingApproval] = {}
+        self._approved_retries: Dict[str, ApprovedRetry] = {}
         self.audit_events: List[AuditEvent] = []
 
     def submit(self, request: ToolRequest) -> ExecutionResult:
@@ -148,7 +156,27 @@ class MCPGateway:
                 Decision.CONFIRM,
                 error="用户拒绝了该操作。",
             )
-        return self._execute(request, Decision.CONFIRM)
+        result = self._execute(request, Decision.CONFIRM)
+        if result.status in {"FAILED", "RESTORED"}:
+            self._approved_retries[request_id] = ApprovedRetry(
+                request, pending.request_fingerprint, remaining=2
+            )
+        return result
+
+    def retry_approved(self, request_id: str) -> ExecutionResult:
+        """Retry only the unchanged, previously approved request (at most twice)."""
+        retry = self._approved_retries.get(request_id)
+        if retry is None or retry.remaining < 1:
+            raise PermissionError("no approved retry available")
+        if approval_fingerprint(retry.request) != retry.request_fingerprint:
+            self._approved_retries.pop(request_id, None)
+            raise PermissionError("approved request changed")
+        retry.remaining -= 1
+        self._record(retry.request, "APPROVED_RETRY", {"remaining": retry.remaining})
+        result = self._execute(retry.request, Decision.CONFIRM)
+        if result.status == "SUCCEEDED" or retry.remaining == 0:
+            self._approved_retries.pop(request_id, None)
+        return result
 
     def _execute(self, request: ToolRequest, decision: Decision) -> ExecutionResult:
         try:
