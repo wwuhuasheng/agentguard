@@ -158,9 +158,13 @@ class PolicyEngine:
         allowed_prefixes = policy.get("allowed_path_prefixes", [])
         path_value = arguments.get("path")
         if path_value and allowed_prefixes:
-            normalized = str(Path(path_value))
+            # Normalise separators so the rule behaves identically on Windows.
+            normalized = str(Path(path_value)).replace("\\", "/")
+            prefixes = [
+                str(Path(prefix)).replace("\\", "/") for prefix in allowed_prefixes
+            ]
             if ".." in Path(path_value).parts or not any(
-                normalized.startswith(prefix) for prefix in allowed_prefixes
+                normalized.startswith(prefix) for prefix in prefixes
             ):
                 evidence.append(
                     self._evidence(
@@ -246,4 +250,3 @@ class PolicyEngine:
             reasons=reasons,
             policy_id=policy["id"] if policy else None,
         )
-
