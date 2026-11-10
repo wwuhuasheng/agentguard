@@ -16,7 +16,7 @@
 
 赛题 1、赛题 2 参赛队员的资源通知要求：队伍完成报名组队、至少一名队员按官方 Word 模板上传一次有效初赛材料、队员本人完成华为云实名认证，之后才进入每周白名单核验。2026 年 12 月 9 日 17:00 是代金券资格的最后一次名单导出。首次上传不要求完整作品或 Demo 链接；可继续修改，初赛评分以作品截止前最后一次提交为准。每位符合条件的队员独立领取 350 积分，经开发者成长中心兑换代金券；积分并非等值现金，也不能假设不同账号可以合并使用。
 
-先将 [`initial-submission-draft.md`](initial-submission-draft.md) 转入**官方** Word 信息表，由队长核对报名信息并上传；完整步骤见 [`competition-resource-claim.md`](competition-resource-claim.md)。这两份本地草稿都不是平台上传回执。
+已根据本机下载的**赛题 2 官方 Word 模板**生成项目内容草稿，存放在工作区 `outputs` 目录，尚缺队伍实名信息、联系方式和团队合照；由队长核对并上传。文字来源见 [`initial-submission-draft.md`](initial-submission-draft.md)，办理步骤见 [`competition-resource-claim.md`](competition-resource-claim.md)。本地文件不是平台上传回执。
 
 ## 初赛材料必须呈现
 
