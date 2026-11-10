@@ -135,7 +135,7 @@ curl -X POST http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-旧版本已完成镜像构建、`initialize`、`tools/list`和`runtime_status`本地验证；本次收紧 MCP 工具清单后需重新进行协议及镜像验证。后端活动事务中的文件修改和群发通知仍会停在`WAITING_CONFIRMATION`；MCP 预览本身不会创建事务。这些本地测试不能替代云上AgentArts部署证据。
+2026 年 11 月 10 日，已在本机临时 Python 3.12 环境使用锁定的 `mcp==1.28.1` 复验最新代码：Streamable HTTP `initialize` 协商 `2025-03-26` 成功；`tools/list` 仅返回 `preview_activity`、`runtime_status`；两个 `tools/call` 均成功，`preview_activity` 返回 `PREVIEW_ONLY` 和三步 `ALLOW / CONFIRM / CONFIRM`。这次**没有重新构建 ARM64 镜像**（本机 Docker 服务未运行），也没有验证华为云运行时。后端活动事务中的文件修改和群发通知仍会停在`WAITING_CONFIRMATION`；MCP 预览本身不会创建事务。本地协议测试不能替代云上AgentArts部署证据。
 
 ## AgentArts控制台步骤
 
