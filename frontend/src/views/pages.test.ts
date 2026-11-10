@@ -168,6 +168,44 @@ describe('rendered page interactions', () => {
     expect(body.reference).toEqual({ name: '外部策划.txt', content: text })
     expect(body.permissions).toEqual([])
   })
+  it('shows reference review suggestions and hides them when the recipient count changes', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        mode: 'PREVIEW_ONLY',
+        source_summary: {
+          name: '虚构名单.csv', format: 'csv', source_trust: 'EXTERNAL_UNTRUSTED',
+          byte_size: 12, sha256: 'hash', flags: [], row_count: 2,
+          safe_columns: ['role'], excluded_column_count: 0, sensitive_columns: [],
+        },
+        checks: [{
+          code: 'COUNT_MISMATCH', severity: 'REVIEW',
+          message: '报名表有 2 行，拟通知 12 人；请核对。',
+        }],
+        warning: '仅供人工核对。',
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await render(TaskConsole, true)
+    const csv = 'role\n志愿者\n主持人\n'
+    const file = new File([csv], '虚构名单.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode(csv).buffer,
+    })
+    const input = wrapper!.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对资料与通知人数'))!.trigger('click')
+    await flushPromises()
+    const [url, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/api/activities/reference-preview')
+    expect(JSON.parse(String(request.body)).recipient_count).toBe(12)
+    expect(wrapper!.get('[aria-label="资料核对建议"]').text()).toContain('报名表有 2 行')
+    await wrapper!.get('#activity-count').setValue('2')
+    expect(wrapper!.find('[aria-label="资料核对建议"]').exists()).toBe(false)
+  })
   it('filters task records by title', async () => {
     await render(TaskConsole)
     await wrapper!.get('[aria-label="搜索任务"]').setValue('impossible-name')

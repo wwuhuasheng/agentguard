@@ -19,7 +19,7 @@ import {
 import { useConsoleStore } from '../stores/console'
 import { liveApi } from '../api/client'
 import { scenarios, permissions } from '../mock/scenarios'
-import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput, ActivityReference } from '../types'
+import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput, ActivityReference, ReferenceReviewPreview } from '../types'
 import StatusBadge from '../components/StatusBadge.vue'
 import { time } from '../labels'
 const s = useConsoleStore(),
@@ -41,6 +41,15 @@ const s = useConsoleStore(),
 const permissionPreview = ref<ActivityPermissionPreview | null>(null)
 const permissionPreviewKey = ref('')
 const previewBusy = ref(false)
+const referenceReview = ref<ReferenceReviewPreview | null>(null)
+const referenceReviewKey = ref('')
+const referenceBusy = ref(false)
+const currentReferenceKey = computed(() =>
+  JSON.stringify([reference.value?.name, reference.value?.content, recipientCount.value])
+)
+const visibleReferenceReview = computed(() =>
+  referenceReviewKey.value === currentReferenceKey.value ? referenceReview.value : null
+)
 const currentPreviewKey = computed(() =>
   JSON.stringify([
     title.value.trim(),
@@ -145,6 +154,28 @@ async function previewPermissions() {
     s.notify(`权限预览失败：${error instanceof Error ? error.message : '网络异常'}`)
   } finally {
     previewBusy.value = false
+  }
+}
+async function previewReference() {
+  if (!reference.value) return s.notify('请先选择一份脱敏 TXT/CSV 资料。')
+  const count = Number(recipientCount.value)
+  if (!Number.isInteger(count) || count < 1 || count > 1000)
+    return s.notify('请填写 1–1000 的接收人数。')
+  const key = currentReferenceKey.value
+  referenceBusy.value = true
+  try {
+    const result = await liveApi.previewReference({
+      reference: reference.value,
+      recipient_count: count,
+    })
+    if (key === currentReferenceKey.value) {
+      referenceReview.value = result
+      referenceReviewKey.value = key
+    }
+  } catch (error) {
+    s.notify(`资料核对失败：${error instanceof Error ? error.message : '网络异常'}`)
+  } finally {
+    referenceBusy.value = false
   }
 }
 async function addFiles(e: Event) {
@@ -356,6 +387,18 @@ function focusForm() {
             </button>
           </div>
         </div>
+        <template v-if="s.mode === 'live' && reference">
+          <button class="button" type="button" :disabled="referenceBusy" @click="previewReference">
+            <FileText :size="16" />{{ referenceBusy ? '正在核对…' : '核对资料与通知人数' }}
+          </button>
+          <div v-if="visibleReferenceReview" class="permission-preview" aria-label="资料核对建议">
+            <p class="helper">{{ visibleReferenceReview.warning }}</p>
+            <article v-for="check in visibleReferenceReview.checks" :key="check.code" class="permission-preview-item">
+              <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
+              <p>{{ check.message }}</p>
+            </article>
+          </div>
+        </template>
         <details v-if="s.mode === 'mock'" class="permission-details">
           <summary><ShieldCheck :size="14" />本次演示的授权范围<ChevronRight :size="14" /></summary>
           <ul>

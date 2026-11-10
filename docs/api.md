@@ -27,6 +27,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | GET | `/api/me` | 返回演示用户 `example.operator`。真实登录和会话鉴权后续接入。 |
 | GET | `/api/tasks` | 按创建时间倒序返回任务，每个任务带完整事件。 |
 | POST | `/api/activities/preview` | 根据本次活动参数只读预估三步工具操作的授权范围与决策，不创建任务。 |
+| POST | `/api/activities/reference-preview` | 对一份脱敏 TXT/CSV 做只读资料核对建议，不创建任务。 |
 | POST | `/api/tasks` | 创建任务并立即执行对应场景，返回 201 和 Task。 |
 | GET | `/api/tasks/{task_id}` | 返回单个 Task。 |
 | GET | `/api/tasks/{task_id}/events` | 返回 AuditEvent 数组。 |
@@ -40,6 +41,8 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 请求体包含 `title`、`description` 和与 `activity` 任务相同的结构化 `activity`。返回 `mode: PREVIEW_ONLY` 以及日历创建、共享文件更新、通知发送三张卡片，每张卡片给出操作范围、预计的 `ALLOW / CONFIRM / BLOCK` 和规则理由。预览不会调用 AgentArts、创建任务、签发真实护照、等待审批或执行工具；提交时仍重新评估，因此预览不是最终授权。
 
 ## 创建任务
+
+提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role\n志愿者\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary` 和 `checks`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；接口不自动改表单、不发通知、不保存任务。改变资料或人数后应重新预览。
 
 ```json
 POST /api/tasks

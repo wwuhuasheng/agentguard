@@ -107,6 +107,16 @@ export interface SourceSummary {
   excluded_column_count?: number
   sensitive_columns?: string[]
 }
+export interface ReferenceReviewPreview {
+  mode: 'PREVIEW_ONLY'
+  source_summary: SourceSummary
+  checks: {
+    code: string
+    severity: 'INFO' | 'REVIEW'
+    message: string
+  }[]
+  warning: string
+}
 export interface Task {
   task_id: string
   title: string

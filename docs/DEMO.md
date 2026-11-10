@@ -27,6 +27,8 @@ uvicorn backend.api.server:app --reload --port 8000
 
 可上传仓库内的 [`activity-reference-injection.txt`](../examples/activity-reference-injection.txt) 或 [`activity-roster-synthetic.csv`](../examples/activity-roster-synthetic.csv)（均为虚构样例）。前者展示外部资料中的越权指令会被标记，但不会改写结构化收件地址；后者展示姓名、手机号列被排除，行值不进入任务记录。轨迹页能查看 `SOURCE_INSPECTED` 摘要。检测规则只是启发式，不能将“未命中”解释成安全；目前资料仅供来源检查，不自动生成活动计划。演示不可上传真实名单或私密文档。
 
+上传 CSV 后点击“核对资料与通知人数”：样例有 2 行，默认拟通知 12 人，页面会提示核对差异和敏感列。把人数改成 2 后，旧建议立即失效；重新核对后会显示“行数一致仍不代表已获授权”。这是决策辅助，不会自动修改人数或收件人，也不阻断用户提交。答辩时可把它与权限预览、审批和轨迹串成一次完整演示。
+
 以下四个预置场景仅在 Mock 回放中选择；后端仍保留对应接口供自动化回归。
 
 ## 1. 正常放行

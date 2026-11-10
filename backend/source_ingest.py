@@ -64,6 +64,69 @@ def inspect_reference(name: str, content: str) -> Dict[str, Any]:
     return result
 
 
+def preview_reference_review(
+    name: str, content: str, recipient_count: int
+) -> Dict[str, Any]:
+    """Suggest human checks without treating reference data as authorization."""
+    if not 1 <= recipient_count <= 1000:
+        raise ValueError("recipient_count must be 1–1000")
+    summary = inspect_reference(name, content)
+    checks = []
+    if summary["format"] == "csv":
+        rows = summary["row_count"]
+        if rows == 0:
+            checks.append({
+                "code": "EMPTY_ROSTER",
+                "severity": "REVIEW",
+                "message": "报名表没有数据行，请核对资料是否完整。",
+            })
+        elif rows != recipient_count:
+            checks.append({
+                "code": "COUNT_MISMATCH",
+                "severity": "REVIEW",
+                "message": (
+                    f"报名表有 {rows} 行，拟通知 {recipient_count} 人；"
+                    "请核对是否包含重复、未报名或其他对象。系统不会自动修改人数。"
+                ),
+            })
+        else:
+            checks.append({
+                "code": "COUNT_MATCH",
+                "severity": "INFO",
+                "message": (
+                    f"报名表行数与拟通知人数均为 {rows}；"
+                    "行数一致不代表每位对象都已授权接收通知。"
+                ),
+            })
+        if summary["sensitive_columns"]:
+            checks.append({
+                "code": "SENSITIVE_FIELDS_EXCLUDED",
+                "severity": "REVIEW",
+                "message": "资料含敏感列；只使用行数与允许的列名，勿上传真实个人名单。",
+            })
+    else:
+        checks.append({
+            "code": "TEXT_NOT_USED_FOR_COUNT",
+            "severity": "INFO",
+            "message": "TXT 不用于推断通知人数；请以用户填写的人数为准。",
+        })
+    if "POSSIBLE_INSTRUCTION_IN_REFERENCE" in summary["flags"]:
+        checks.append({
+            "code": "INSTRUCTION_REVIEW",
+            "severity": "REVIEW",
+            "message": (
+                "资料可能包含操作指令；仅作为待核对内容，"
+                "不会改变收件人或工具权限。"
+            ),
+        })
+    return {
+        "mode": "PREVIEW_ONLY",
+        "source_summary": summary,
+        "checks": checks,
+        "warning": "这是提交前建议，不创建任务、不授权、不执行工具；仍需人工核对。",
+    }
+
+
 def _inspect_csv(content: str, flags: list[str]) -> Dict[str, Any]:
     try:
         reader = csv.reader(io.StringIO(content, newline=""), strict=True)

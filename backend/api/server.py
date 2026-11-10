@@ -25,7 +25,7 @@ from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
 from backend.recovery import RecoveryController
 from backend.services import DEMO_USER, TaskService
-from backend.source_ingest import inspect_reference
+from backend.source_ingest import inspect_reference, preview_reference_review
 
 _ROOT = Path(__file__).resolve().parents[2]
 _POLICIES = _ROOT / "config" / "policies.json"
@@ -64,6 +64,11 @@ class ActivityPreviewInput(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=2000)
     activity: ActivityInput
+
+
+class ReferencePreviewInput(BaseModel):
+    reference: ReferenceInput
+    recipient_count: int = Field(ge=1, le=1000)
 
 
 class ApprovalDecision(BaseModel):
@@ -137,6 +142,17 @@ def create_app() -> FastAPI:
                     recipient_count=activity.recipient_count,
                     notice_content=payload.description,
                 ),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/api/activities/reference-preview")
+    def preview_reference(payload: ReferencePreviewInput) -> Dict[str, Any]:
+        try:
+            return preview_reference_review(
+                payload.reference.name,
+                payload.reference.content,
+                payload.recipient_count,
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
