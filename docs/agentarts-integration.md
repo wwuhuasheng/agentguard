@@ -14,7 +14,7 @@
 4. 行为守卫节点标注文件更新、群发通知的风险，最终决策仍交给确定性网关；
 5. 结束节点输出 `agent_evidence_json`，用正常输入和不可信输入各试运行一次，保存画布和运行截图。
 
-这一步能证明 AgentArts 的**真实构建与试运行**，但尚不能证明“AgentArts 已经调用我们的安全网关”。初赛最终版应在资源到位后接入自定义 MCP/HTTP 工具、展示审批和 Trace；不得把独立的本地前端演示与控制台试运行剪辑成一条已经打通的云端链路。AgentArts 对自研 HTTP MCP 要求公网可达；也支持从 npm/PyPI 拉起 Stdio MCP，但现有仓库的 Streamable HTTP 服务不能不经适配直接当成 UVX 包使用。
+这一步能证明 AgentArts 的**真实构建与试运行**，但尚不能证明“AgentArts 已经调用我们的安全网关”。初赛最终版应在资源到位后接入只读的策略预览 MCP/HTTP 工具，并由演示后端负责真实任务、人工审批和 Trace；不得把独立的本地前端演示与控制台试运行剪辑成一条已经打通的云端链路。AgentArts 对自研 HTTP MCP 要求公网可达；也支持从 npm/PyPI 拉起 Stdio MCP，但现有仓库的 Streamable HTTP 服务不能不经适配直接当成 UVX 包使用。
 
 官方参考：[免费体验和依赖服务](https://support.huaweicloud.com/qs-agentarts/agentarts_04_0000.html)、[试运行免费 Token 范围](https://support.huaweicloud.com/bestpractice-agentarts/agentarts_06_0094.html)、[自定义 MCP 接入方式](https://support.huaweicloud.com/lowcode-agentarts/agentarts_05_0136.html)。
 
@@ -44,8 +44,10 @@ Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例�
 可将这个 JSON 放在工作流结束节点的 `user_fields.agent_evidence_json`，或作为
 `responseContent` 返回；工作流必须产生 `workflow_finished` 且状态为 `succeeded`。
 后端只接收这三条证据。即使模型输出 `steps`、工具参数或更高的信任级别，
-它们也不会进入执行计划。平台工作流可用只读 MCP 工具 `runtime_status` 验证连接，
-**不要**在当前规划工作流中调用会产生副作用的 MCP 工具，否则会与后端网关重复执行。
+它们也不会进入执行计划。平台工作流可用 MCP 工具 `runtime_status` 验证连接，
+并用 `preview_activity` 展示确定性规则如何判定三个事务步骤。预览结果不签发
+实际授权、不创建任务、不审批，也不执行模拟工具；用户输入与模型输出必须由
+可信演示后端分开处理。
 
 账号侧需要完成：开通 AgentArts；接入可用于 API 调用的 MaaS/第三方模型；
 提交工作流版本并勾选“部署至实例”；入站认证选 API Key；复制完整调用路径，
@@ -76,20 +78,20 @@ uvicorn backend.api.server:app --port 8000
 ## 作品中的职责边界
 
 ```text
-可视化Demo
-  -> AgentArts多智能体/工作流
-     -> 业务规划Agent
-     -> 内容隔离Agent
-     -> 行为守卫Agent
-  -> AgentGuard MCP Server
-     -> 任务护照
-     -> ALLOW / CONFIRM / BLOCK
-     -> 审批摘要绑定
-     -> 回滚、熔断与Trace
-  -> 脱敏模拟工具
+可视化Demo -> 演示后端（目前只允许本地/受控环境，尚无真实身份认证）
+  -> AgentArts多智能体/工作流（分析证据）
+     -> 只读MCP：策略预览、运行状态
+  -> 可信执行链：任务护照 -> 策略网关 -> 人工审批 -> 脱敏模拟工具
+     -> Trace、回滚与熔断
 ```
 
-AgentArts负责模型、提示词、工作流、多Agent协作、阻塞恢复、调用链和评估。仓库代码负责确定性的安全执行边界。比赛演示必须以AgentArts为主入口，本地适配器只用于离线回归，不能作为已经接入AgentArts的证明。
+AgentArts 负责模型、提示词、工作流、多 Agent 协作、平台调用链和评估；演示后端负责事务暂停/恢复、人工审批、确定性安全执行边界和业务 Trace。比赛演示应真实呈现 AgentArts 工作流及其只读 MCP 调用，本地适配器只用于离线回归，不能作为已经接入 AgentArts 的证明。
+
+**安全边界：**公开给 AgentArts 的 MCP Server 只注册 `preview_activity` 和
+`runtime_status`。模型不能通过 MCP 创建任务、读取任务护照、提交原始工具请求、
+取消任务或批准待确认操作。预览中的 `source_trust` 只是未核验的假设，绝不转化为
+执行授权。现有演示 HTTP API 还没有用户身份认证，禁止直接公网开放；若要云端
+互动演示，须先补登录、会话绑定、审批身份校验和服务间认证。
 
 ## 本地MCP服务
 
@@ -133,7 +135,7 @@ curl -X POST http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-本地验收结果：镜像构建、`initialize`、`tools/list`和`runtime_status`调用均已通过；创建模拟活动后，文件修改和群发通知会停在`WAITING_CONFIRMATION`。这证明协议入口与安全暂停链路可运行，但不能替代云上AgentArts部署证据。
+旧版本已完成镜像构建、`initialize`、`tools/list`和`runtime_status`本地验证；本次收紧 MCP 工具清单后需重新进行协议及镜像验证。后端活动事务中的文件修改和群发通知仍会停在`WAITING_CONFIRMATION`；MCP 预览本身不会创建事务。这些本地测试不能替代云上AgentArts部署证据。
 
 ## AgentArts控制台步骤
 
@@ -143,10 +145,10 @@ curl -X POST http://127.0.0.1:8080/mcp \
 4. 取得访问地址，通过`tools/list`和`tools/call`完成云上验证；
 5. 在“开发中心 > 智能体组件 > MCP”创建自定义MCP，选择Streamable HTTP；
 6. 创建业务规划、内容隔离、行为守卫三个Agent；
-7. 创建固定工作流，按规划、隔离、护照、行为裁决、确认、执行的顺序连接；
-8. 高影响操作使用提问器或等待输入节点，拒绝时调用`cancel_activity_task`；
+7. 创建固定工作流，按规划、隔离、`preview_activity`、行为守卫和结束节点连接；
+8. 在演示后端由用户明确提交任务，后端签发护照并通过自己的审批界面接收确认；AgentArts 工作流不能替用户调用审批；
 9. 提交版本并部署多智能体应用，开启日志、指标和调用链；
-10. 可视化Demo调用AgentArts运行时API，不直接绕过AgentArts调用本地FastAPI。
+10. 可视化 Demo 由后端持有密钥并调用 AgentArts 运行时 API，再由后端执行受控事务；前端不直接持有 AgentArts Key，也不能把纯本地链路冒充云端调用。
 
 ## 建议工作流
 
@@ -155,20 +157,18 @@ curl -X POST http://127.0.0.1:8080/mcp \
  -> 提问器补齐活动参数
  -> 业务规划Agent
  -> 内容隔离Agent
- -> create_secure_activity
- -> 判断任务状态
-    -> WAITING_CONFIRMATION: 等待用户确认
-       -> 同意: resolve_activity_approval(true)
-       -> 拒绝: resolve_activity_approval(false)
-    -> BLOCKED: 展示风险证据
-    -> SUCCEEDED: 展示结果
- -> get_task_trace
+ -> preview_activity（只读：ALLOW / CONFIRM / BLOCK 及原因）
+ -> 行为守卫Agent解释风险，不执行、不批准
  -> 结束
+
+用户在可视化Demo提交任务 -> 后端签发任务护照 -> 执行到待确认
+ -> 用户在审批界面明确同意或拒绝 -> 后端继续或回滚 -> 展示Trace
 ```
 
 ## 当前限制
 
 - 服务状态仍保存在单进程内存中，只适合初赛原型和单副本演示；
+- 演示 API 无真实用户认证，不可直接部署成公网可写服务；
 - 正式多副本部署前需将任务、护照、审批和Trace持久化；
 - 真实AgentArts工作流、调用链截图和平台评估需在取得云账号与模型资源后完成；
 - 不得在仓库提交API Key、Token或`.agentarts_config.yaml`。

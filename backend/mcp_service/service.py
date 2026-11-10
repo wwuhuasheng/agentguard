@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from uuid import uuid4
 
 from backend.agent_core import (
     ActivitySpec,
@@ -9,6 +10,7 @@ from backend.agent_core import (
 )
 from backend.bootstrap import build_runtime
 from backend.models import ToolRequest, TrustLevel
+from backend.policy_engine import PassportIssuer, PolicyEngine
 
 
 class AgentGuardMCPService:
@@ -19,6 +21,57 @@ class AgentGuardMCPService:
         self.coordinator = TaskCoordinator(
             self.gateway, DeterministicAgentArtsAdapter()
         )
+
+    def preview_activity(
+        self,
+        title: str,
+        starts_at: str,
+        location: str,
+        recipient: str,
+        recipient_count: int,
+        notice_content: str,
+        source_trust: str = "MODEL_GENERATED",
+    ) -> Dict[str, Any]:
+        """Assess a hypothetical plan without touching live tasks or tools.
+
+        The caller-supplied trust label is a preview assumption, never a grant of
+        authority. A fresh policy engine and passport registry isolate the
+        one-use evaluation from the live execution gateway.
+        """
+        fields = (title, starts_at, location, recipient, notice_content)
+        if not all(value.strip() for value in fields):
+            raise ValueError("activity preview fields must not be empty")
+        if recipient_count < 1:
+            raise ValueError("recipient_count must be positive")
+        spec = ActivitySpec(
+            title=title,
+            starts_at=starts_at,
+            location=location,
+            recipient=recipient,
+            recipient_count=recipient_count,
+            notice_content=notice_content,
+            source_trust=self._trust_level(source_trust),
+        )
+        preview_engine = PolicyEngine(self.gateway.engine.repository)
+        task_id = str(uuid4())
+        plan = DeterministicAgentArtsAdapter().plan_activity(task_id, spec)
+        _, bound = PassportIssuer(preview_engine.passports).issue(task_id, plan.steps)
+        decisions = [preview_engine.evaluate(request) for request in bound]
+        return {
+            "mode": "PREVIEW_ONLY",
+            "source_trust_assumption": spec.source_trust.value,
+            "warning": "模型提供的来源等级未经核验；预览不授权、不审批、不执行工具。",
+            "steps": [
+                {
+                    "tool_name": request.tool_name,
+                    "action": request.action,
+                    "decision": decision.decision.value,
+                    "risk_level": decision.risk_level.value,
+                    "reasons": [reason.code for reason in decision.reasons],
+                }
+                for request, decision in zip(bound, decisions)
+            ],
+        }
 
     def create_secure_activity(
         self,
@@ -94,12 +147,7 @@ class AgentGuardMCPService:
             "transport": "streamable-http",
             "policy_mode": "deterministic",
             "registered_tools": [
-                "create_secure_activity",
-                "resolve_activity_approval",
-                "cancel_activity_task",
-                "get_activity_task",
-                "get_task_trace",
-                "submit_guarded_tool_request",
+                "preview_activity",
                 "runtime_status",
             ],
             "circuits": self.gateway.recovery.breaker.states()

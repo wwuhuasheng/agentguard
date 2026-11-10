@@ -1,3 +1,4 @@
+import ast
 import sys
 import unittest
 from pathlib import Path
@@ -85,7 +86,61 @@ class MCPServiceTests(unittest.TestCase):
     def test_runtime_status_describes_real_mcp_transport(self):
         status = self.service.runtime_status()
         self.assertEqual(status["transport"], "streamable-http")
-        self.assertIn("submit_guarded_tool_request", status["registered_tools"])
+        self.assertEqual(
+            status["registered_tools"], ["preview_activity", "runtime_status"]
+        )
+
+    def test_mcp_registration_has_no_approval_or_execution_tool(self):
+        server = ast.parse((ROOT / "deploy/mcp_server/server.py").read_text())
+        exposed = [
+            node.name
+            for node in server.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and any(
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr == "tool"
+                for decorator in node.decorator_list
+            )
+        ]
+        self.assertEqual(exposed, ["preview_activity", "runtime_status"])
+
+    def test_agent_preview_is_read_only_and_never_grants_approval(self):
+        before = self.service.workspace.snapshot()
+        preview = self.service.preview_activity(
+            title="社区公益活动",
+            starts_at="2026-12-01T09:00:00+08:00",
+            location="社区服务中心",
+            recipient="participants@example.org",
+            recipient_count=40,
+            notice_content="活动提醒",
+            source_trust="USER_CONFIRMED",
+        )
+        self.assertEqual(preview["mode"], "PREVIEW_ONLY")
+        self.assertEqual(
+            [step["decision"] for step in preview["steps"]],
+            ["ALLOW", "CONFIRM", "CONFIRM"],
+        )
+        self.assertEqual(self.service.workspace.snapshot(), before)
+        self.assertEqual(self.service.coordinator.tasks, {})
+        self.assertEqual(self.service.gateway.audit_events, [])
+        self.assertEqual(self.service.gateway.pending, {})
+
+    def test_preview_cannot_promote_external_input_to_user_authority(self):
+        preview = self.service.preview_activity(
+            title="社区公益活动",
+            starts_at="2026-12-01T09:00:00+08:00",
+            location="社区服务中心",
+            recipient="participants@example.org",
+            recipient_count=20,
+            notice_content="活动提醒",
+            source_trust="EXTERNAL_UNTRUSTED",
+        )
+        self.assertEqual(
+            [step["decision"] for step in preview["steps"]],
+            ["BLOCK", "BLOCK", "BLOCK"],
+        )
+        self.assertEqual(self.service.workspace.notifications, [])
 
 
 if __name__ == "__main__":
