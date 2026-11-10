@@ -11,8 +11,13 @@ import IncidentDetail from './IncidentDetail.vue'
 import App from '../App.vue'
 import { useConsoleStore } from '../stores/console'
 let wrapper: VueWrapper | undefined
+const storage = new Map<string, string>()
 beforeEach(() => {
-  localStorage.clear()
+  storage.clear()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  })
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-11-06T02:00:00Z'))
   setActivePinia(createPinia())

@@ -10,7 +10,13 @@
 | 知识接入 | 待设计 | 安全规则知识库及引用证据 |
 | 多Agent协作 | 本地协议完成，云端待建 | 三Agent运行Trace |
 | 效果评估 | 待成员C实现 | 评测集、基线对比、AgentArts评估报告 |
-| 初赛材料可复现 | 40 项后端测试、25 项前端测试、构建和本地 MCP 协议验证通过 | AgentArts 云端调用录像与演示视频 |
+| 初赛材料可复现 | 46 项后端测试、25 项前端测试、构建和本地 MCP 协议验证通过 | AgentArts 云端调用录像与演示视频 |
+
+## 先上传材料再领取赛事资源
+
+赛题 1、赛题 2 参赛队员的资源通知要求：队伍完成报名组队、至少一名队员按官方 Word 模板上传一次有效初赛材料、队员本人完成华为云实名认证，之后才进入每周白名单核验。2026 年 12 月 9 日 17:00 是代金券资格的最后一次名单导出。首次上传不要求完整作品或 Demo 链接；可继续修改，初赛评分以作品截止前最后一次提交为准。每位符合条件的队员独立领取 350 积分，经开发者成长中心兑换代金券；积分并非等值现金，也不能假设不同账号可以合并使用。
+
+先将 [`initial-submission-draft.md`](initial-submission-draft.md) 转入**官方** Word 信息表，由队长核对报名信息并上传；完整步骤见 [`competition-resource-claim.md`](competition-resource-claim.md)。这两份本地草稿都不是平台上传回执。
 
 ## 初赛材料必须呈现
 
@@ -19,7 +25,7 @@
 - Agent设计方案与工作流架构；
 - 模型、知识库、MCP和其他资产选择；
 - 基于AgentArts构建并运行的完整流程；
-- 可复现的Demo视频；
+- 基于AgentArts真实构建与运行的Demo视频（首次为领取资源而上传的材料可不含完整作品或Demo链接，初赛最终版仍需补齐）；
 - 团队分工。
 
 ## 当前主创新点
@@ -35,7 +41,8 @@
 - `tools/call`可调用`runtime_status`；
 - 端到端校园活动样例在完成低风险步骤后停在`WAITING_CONFIRMATION`，未直接执行文件更新和群发通知。
 - 任务护照授权不可重放，普通HTTP API不暴露绕过护照的原始工具入口。
-- 前端 Live 模式可提交结构化活动参数并展示规划证据与护照；目前规划器仍是本地离线适配器。
+- 前端 Live 模式可提交结构化活动参数并展示规划证据与护照；默认规划器仍是本地离线适配器。
+- 2026 年 11 月 10 日复测：后端 46 项、前端 25 项测试和前端生产构建通过。
 
 ## 暂不能宣称完成的能力
 
@@ -46,7 +53,9 @@
 
 ## 比赛要求复核依据
 
-- [华为ICT大赛官方赛事入口](https://e.huawei.com/cn/talent/#/ict/innovation-details?compId=1234604535111213057&divisionName=practice&divisionId=1234585371000848429&compName=%E5%8D%8E%E4%B8%BAICT%E5%A4%A7%E8%B5%9B2026-2027)
+- [华为ICT大赛创新赛中国区官方赛题入口](https://e.huawei.com/cn/talent/#/ict/innovation-details?zoneCode=027425&zoneId=98269700&compId=85132021&divisionName=%E4%B8%AD%E5%9B%BD%E5%8C%BA&type=C002)
+- [赛事资源积分领取入口](https://gallery.developer.huaweicloud.com/gallery/competition?type=innovation)
+- [初赛作品上传操作指导](https://e.huawei.com/cn/talent/news/#/details?consultationId=5970)
 - [大连理工大学2026—2027华为ICT大赛通知](https://chuangxin.dlut.edu.cn/info/1020/16867.htm)
 - [AgentArts MCP Server镜像开发说明](https://support.huaweicloud.com/highcode-agentarts/agentarts_10_080.html)
 - [AgentArts MCP Server运行时部署说明](https://support.huaweicloud.com/highcode-agentarts/agentarts_10_127.html)

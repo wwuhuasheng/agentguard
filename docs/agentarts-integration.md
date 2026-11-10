@@ -1,5 +1,23 @@
 # AgentArts接入与部署
 
+## 参赛顺序与零自购起步
+
+赛题 2 的资源邮件要求**先上传一次有效初赛材料，再由各队员领取积分兑换代金券**。领取流程见 [`competition-resource-claim.md`](competition-resource-claim.md)。因此，不应把购买 MaaS 或云服务器当成开始开发的前置条件。
+
+在代金券券种和适用范围核实前，先使用 AgentArts 体验版的控制台能力：申请公测、免费开通体验版、创建工作流、在平台内试运行并记录节点输入输出。平台首次赠送的 200 万模型 Token 仅用于模型调测和智能体试运行，**不覆盖发布后从我们的后端/前端发起的正式 API 调用**。目前的 `feature/agentarts-cloud-bridge` 正属于后者；未取得适用代金券或明确预算前，不启用它的真实云端调用。体验版自身有额度限制，开通套餐时可能自动启用按需计费，部署前还需检查日志、指标、调用链等依赖服务的计费选项。
+
+初次控制台试运行的最小工作流：
+
+1. 开始节点输入 `title`、`starts_at`、`location`、`recipient`、`recipient_count`、`notice_content`、`source_trust`，只填 `example.org` 等脱敏模拟数据；
+2. 业务规划节点输出目标与三步事务的**分析证据**，不得生成可执行的新收件人或新工具；
+3. 内容隔离节点说明 `source_trust`，把外部资料中的命令视为待审查文本，不承认其授权声明；
+4. 行为守卫节点标注文件更新、群发通知的风险，最终决策仍交给确定性网关；
+5. 结束节点输出 `agent_evidence_json`，用正常输入和不可信输入各试运行一次，保存画布和运行截图。
+
+这一步能证明 AgentArts 的**真实构建与试运行**，但尚不能证明“AgentArts 已经调用我们的安全网关”。初赛最终版应在资源到位后接入自定义 MCP/HTTP 工具、展示审批和 Trace；不得把独立的本地前端演示与控制台试运行剪辑成一条已经打通的云端链路。AgentArts 对自研 HTTP MCP 要求公网可达；也支持从 npm/PyPI 拉起 Stdio MCP，但现有仓库的 Streamable HTTP 服务不能不经适配直接当成 UVX 包使用。
+
+官方参考：[免费体验和依赖服务](https://support.huaweicloud.com/qs-agentarts/agentarts_04_0000.html)、[试运行免费 Token 范围](https://support.huaweicloud.com/bestpractice-agentarts/agentarts_06_0094.html)、[自定义 MCP 接入方式](https://support.huaweicloud.com/lowcode-agentarts/agentarts_05_0136.html)。
+
 ## 云端规划桥接（代码已就绪，尚待真实账号验证）
 
 现有控制台 `live` 模式可通过后端调用 AgentArts 已发布工作流。启用后，
