@@ -59,6 +59,21 @@ export interface ActivityInput {
   recipient: string
   recipient_count: number
 }
+export interface ActivityPermissionPreview {
+  mode: 'PREVIEW_ONLY'
+  source_trust_assumption: TrustLevel
+  warning: string
+  steps: {
+    tool_name: string
+    action: string
+    description: string
+    scope: string
+    decision: Decision
+    risk_level: RiskLevel
+    reasons: string[]
+    reason_messages: string[]
+  }[]
+}
 export type TaskStatus =
   | 'ANALYZING'
   | 'EXECUTING'

@@ -17,8 +17,9 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 import { useConsoleStore } from '../stores/console'
+import { liveApi } from '../api/client'
 import { scenarios, permissions } from '../mock/scenarios'
-import type { Scenario, FileMeta } from '../types'
+import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput } from '../types'
 import StatusBadge from '../components/StatusBadge.vue'
 import { time } from '../labels'
 const s = useConsoleStore(),
@@ -36,6 +37,23 @@ const s = useConsoleStore(),
   form = ref<HTMLElement>(),
   query = ref(''),
   filter = ref('all')
+const permissionPreview = ref<ActivityPermissionPreview | null>(null)
+const permissionPreviewKey = ref('')
+const previewBusy = ref(false)
+const currentPreviewKey = computed(() =>
+  JSON.stringify([
+    title.value.trim(),
+    description.value.trim(),
+    startsAt.value,
+    timezoneOffset.value,
+    location.value.trim(),
+    recipient.value.trim(),
+    recipientCount.value,
+  ])
+)
+const visiblePreview = computed(() =>
+  permissionPreviewKey.value === currentPreviewKey.value ? permissionPreview.value : null
+)
 const rows = computed(() =>
   s.tasks.filter(
     (t) =>
@@ -90,6 +108,42 @@ async function submit() {
       : undefined
   )
   if (t) void router.push('/trace')
+}
+async function previewPermissions() {
+  if (!title.value.trim() || !description.value.trim() || !startsAt.value ||
+      !location.value.trim() || !recipient.value.trim()) {
+    s.notify('请先填齐活动参数，再预览权限。')
+    return
+  }
+  const startsAtWithZone = `${startsAt.value}:00${timezoneOffset.value}`
+  const start = new Date(startsAtWithZone)
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
+    s.notify('活动时间必须晚于当前时间。')
+    return
+  }
+  const activity: ActivityInput = {
+    starts_at: startsAtWithZone,
+    location: location.value.trim(),
+    recipient: recipient.value.trim(),
+    recipient_count: Number(recipientCount.value),
+  }
+  const key = currentPreviewKey.value
+  previewBusy.value = true
+  try {
+    const result = await liveApi.previewActivity({
+      title: title.value.trim(),
+      description: description.value.trim(),
+      activity,
+    })
+    if (key === currentPreviewKey.value) {
+      permissionPreview.value = result
+      permissionPreviewKey.value = key
+    }
+  } catch (error) {
+    s.notify(`权限预览失败：${error instanceof Error ? error.message : '网络异常'}`)
+  } finally {
+    previewBusy.value = false
+  }
 }
 function addFiles(e: Event) {
   const list = (e.target as HTMLInputElement).files
@@ -218,6 +272,17 @@ function focusForm() {
             </div>
           </div>
           <p class="helper">当前演示策略仅允许 example.org 域名；超过 30 人发送通知需二次审批。这里使用内存模拟工具，不会真实发送邮件。</p>
+          <button class="button" type="button" :disabled="previewBusy" @click="previewPermissions">
+            <ShieldCheck :size="16" />{{ previewBusy ? '正在预览…' : '预览本次权限与风险' }}
+          </button>
+          <div v-if="visiblePreview" class="permission-preview" aria-label="本次权限预览">
+            <p class="helper">{{ visiblePreview.warning }}</p>
+            <article v-for="step in visiblePreview.steps" :key="step.tool_name" class="permission-preview-item">
+              <div class="row between"><strong>{{ step.description }}</strong><StatusBadge :value="step.decision" /></div>
+              <small>{{ step.scope }}</small>
+              <p>{{ step.reason_messages.join('；') }}</p>
+            </article>
+          </div>
         </template><template v-else
           ><div class="row between field-label">
             <span>演示场景</span><span class="muted small">由预置事件驱动</span>
@@ -267,13 +332,14 @@ function focusForm() {
             </button>
           </div>
         </div>
-        <details class="permission-details">
+        <details v-if="s.mode === 'mock'" class="permission-details">
           <summary><ShieldCheck :size="14" />本次演示的授权范围<ChevronRight :size="14" /></summary>
           <ul>
             <li v-for="p in permissions" :key="p">{{ p }}</li>
             <li>禁止删除原文件，禁止外发敏感字段</li>
           </ul>
         </details>
+        <p v-else class="helper">Live 模式只使用上方填写的活动参数；目前不读取附件内容。点击“预览本次权限与风险”查看本次任务的实际工具范围。</p>
         <div class="form-bottom">
           <span><ShieldCheck :size="14" />所有工具请求均经过策略检查</span
           ><button class="button primary" type="submit" :disabled="s.busy">

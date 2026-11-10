@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from backend.agent_core import ActivitySpec
 from backend.agent_core.agentarts_cloud import AgentArtsError, planner_from_env
+from backend.agent_core.permission_preview import preview_activity_permissions
 from backend.api.app import create_app as create_core_app
 from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
@@ -50,6 +51,12 @@ class TaskCreate(BaseModel):
     files: list[Dict[str, Any]] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
     activity: Optional[ActivityInput] = None
+
+
+class ActivityPreviewInput(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=2000)
+    activity: ActivityInput
 
 
 class ApprovalDecision(BaseModel):
@@ -108,6 +115,25 @@ def create_app() -> FastAPI:
     def tasks() -> list[Dict[str, Any]]:
         return service.list_tasks()
 
+    @app.post("/api/activities/preview")
+    def preview_activity(payload: ActivityPreviewInput) -> Dict[str, Any]:
+        activity = payload.activity
+        _validate_activity_input(activity)
+        try:
+            return preview_activity_permissions(
+                runtime.gateway.engine.repository,
+                ActivitySpec(
+                    title=payload.title,
+                    starts_at=activity.starts_at.isoformat(),
+                    location=activity.location,
+                    recipient=activity.recipient,
+                    recipient_count=activity.recipient_count,
+                    notice_content=payload.description,
+                ),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.post("/api/tasks", status_code=201)
     def create_task(payload: TaskCreate) -> Dict[str, Any]:
         if payload.scenario == "activity":
@@ -116,19 +142,7 @@ def create_app() -> FastAPI:
                     status_code=422, detail="notice content is required"
                 )
             if payload.activity is not None:
-                starts_at = payload.activity.starts_at
-                if starts_at.tzinfo is None or starts_at.utcoffset() is None:
-                    raise HTTPException(status_code=422, detail="timezone is required")
-                if starts_at <= datetime.now(timezone.utc):
-                    raise HTTPException(
-                        status_code=422, detail="activity time must be in the future"
-                    )
-                if not fullmatch(
-                    r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.activity.recipient
-                ):
-                    raise HTTPException(
-                        status_code=422, detail="valid recipient email is required"
-                    )
+                _validate_activity_input(payload.activity)
         try:
             return service.create_task(
                 title=payload.title,
@@ -202,6 +216,18 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="incident not found") from None
 
     return app
+
+
+def _validate_activity_input(activity: ActivityInput) -> None:
+    starts_at = activity.starts_at
+    if starts_at.tzinfo is None or starts_at.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="timezone is required")
+    if starts_at <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422, detail="activity time must be in the future"
+        )
+    if not fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", activity.recipient):
+        raise HTTPException(status_code=422, detail="valid recipient email is required")
 
 
 app = create_app()

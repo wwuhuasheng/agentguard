@@ -103,6 +103,41 @@ describe('rendered page interactions', () => {
     expect(body.activity.starts_at).toBe('2026-11-15T10:00:00+08:00')
     expect(s.tasks[0]!.task_id).toBe('live-activity-1')
   })
+  it('previews task-specific permissions without submitting and hides stale results', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        mode: 'PREVIEW_ONLY',
+        source_trust_assumption: 'USER_CONFIRMED',
+        warning: '仅按当前参数预估，不执行工具。',
+        steps: [{
+          tool_name: 'send_notice',
+          action: 'send',
+          description: '发送活动通知',
+          scope: '40 人 · readers@example.org',
+          decision: 'CONFIRM',
+          risk_level: 'HIGH',
+          reasons: ['BULK_ACTION_REQUIRES_CONFIRMATION'],
+          reason_messages: ['接收人数超过自动执行阈值。'],
+        }],
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const s = await render(TaskConsole, true)
+    await wrapper!.get('#activity-time').setValue('2026-11-15T10:00')
+    await wrapper!.get('#activity-recipient').setValue('readers@example.org')
+    await wrapper!.get('#activity-count').setValue('40')
+    await wrapper!.findAll('button').find((b) => b.text().includes('预览本次权限'))!.trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/api/activities/preview')
+    expect(wrapper!.get('[aria-label="本次权限预览"]').text()).toContain('40 人 · readers@example.org')
+    expect(s.tasks).toHaveLength(2)
+    await wrapper!.get('#activity-count').setValue('12')
+    expect(wrapper!.find('[aria-label="本次权限预览"]').exists()).toBe(false)
+  })
   it('filters task records by title', async () => {
     await render(TaskConsole)
     await wrapper!.get('[aria-label="搜索任务"]').setValue('impossible-name')

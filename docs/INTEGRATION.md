@@ -39,7 +39,7 @@ Live 失败不会自动退回 Mock，左侧用户名来自 `/api/me`。
 
 ## 四个演示场景
 
-Live 模式当前以 `activity` 结构化活动任务为主：页面提交时间、地点、通知接收方、人数和内容。默认由本地离线规划器生成日历、共享文件与通知三个事务步骤；显式配置 `AGENTGUARD_PLANNER=agentarts` 后，后端先调用已部署的 AgentArts 工作流取得分析证据，再从用户输入确定工具参数并执行现有网关。云端调用未完成时不会回退为本地计划。四个预置场景保留在 Mock 回放和后端回归测试中，不作为真实 AgentArts 云端接入证据。具体配置见 [agentarts-integration.md](agentarts-integration.md)。
+Live 模式当前以 `activity` 结构化活动任务为主：页面先可只读预览本次时间、地点、通知接收方和人数对应的权限范围与三态决策，再提交事务；预览不等于授权。默认由本地离线规划器生成日历、共享文件与通知三个事务步骤；显式配置 `AGENTGUARD_PLANNER=agentarts` 后，后端先调用已部署的 AgentArts 工作流取得分析证据，再从用户输入确定工具参数并执行现有网关。云端调用未完成时不会回退为本地计划。四个预置场景保留在 Mock 回放和后端回归测试中，不作为真实 AgentArts 云端接入证据。具体配置见 [agentarts-integration.md](agentarts-integration.md)。
 
 1. `normal`：低风险日程和小范围通知自动通过真实策略网关执行。
 2. `approval`：40 人通知产生待审批请求；批准后执行一次，拒绝后不执行。

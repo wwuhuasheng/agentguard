@@ -12,12 +12,13 @@
 
 前端主链路：
 
-1. `POST /api/tasks` 创建完整活动事务；
-2. 当返回 `WAITING_CONFIRMATION` 时展示 `pending_request_id` 和 `plan_summary`；
-3. `POST /api/tasks/{task_id}/decision` 提交用户批准或拒绝；
-4. `GET /api/tasks/{task_id}` 刷新任务状态；
-5. `GET /api/tasks/{task_id}/events` 渲染策略与执行时间线；
-6. `GET /api/runtime/circuits` 展示工具熔断状态。
+1. `POST /api/activities/preview` 按用户当前参数只读预览工具范围与预计决策；它不是授权，不会创建任务；
+2. `POST /api/tasks` 创建完整活动事务；
+3. 返回 `WAITING_APPROVAL` 时，通过 `GET /api/approvals` 取得 `approval_id` 与完整请求参数；
+4. `POST /api/approvals/{approval_id}/decision` 提交用户批准或拒绝；
+5. `GET /api/tasks/{task_id}` 刷新任务状态；
+6. `GET /api/tasks/{task_id}/events` 渲染策略与执行时间线；
+7. 如需底层熔断状态，用 `/core/api/runtime/circuits`；统一控制台没有 `/api/runtime/circuits` 路由。
 
 评测模块直接读取事件类型，不重复实现策略。建议首先覆盖：
 

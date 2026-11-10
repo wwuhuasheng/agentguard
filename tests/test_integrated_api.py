@@ -15,6 +15,55 @@ class IntegratedAPITests(unittest.TestCase):
         self.app = create_app()
         self.client = TestClient(self.app)
 
+    def test_activity_permission_preview_is_specific_and_read_only(self):
+        runtime = self.app.state.runtime
+        before = runtime.service.workspace.snapshot()
+        response = self.client.post(
+            "/api/activities/preview",
+            json={
+                "title": "周末读书会",
+                "description": "请提前到场",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区图书馆",
+                    "recipient": "readers@example.org",
+                    "recipient_count": 40,
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        preview = response.json()
+        self.assertEqual(preview["mode"], "PREVIEW_ONLY")
+        self.assertEqual(
+            [step["decision"] for step in preview["steps"]],
+            ["ALLOW", "CONFIRM", "CONFIRM"],
+        )
+        self.assertIn("40 人 · readers@example.org", preview["steps"][2]["scope"])
+        self.assertEqual(runtime.service.workspace.snapshot(), before)
+        self.assertEqual(runtime.service.list_tasks(), [])
+        self.assertEqual(runtime.gateway.audit_events, [])
+        self.assertNotIn("passport_id", str(preview))
+
+    def test_preview_marks_disallowed_recipient_without_executing(self):
+        response = self.client.post(
+            "/api/activities/preview",
+            json={
+                "title": "周末读书会",
+                "description": "请提前到场",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区图书馆",
+                    "recipient": "outsider@unauthorized.invalid",
+                    "recipient_count": 12,
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        notice = response.json()["steps"][2]
+        self.assertEqual(notice["decision"], "BLOCK")
+        self.assertIn("RECIPIENT_DOMAIN_DENIED", notice["reasons"])
+        self.assertEqual(self.app.state.runtime.service.workspace.notifications, [])
+
     def test_console_and_core_share_one_gateway(self):
         console = self.client.post(
             "/api/tasks", json={"title": "社区活动", "scenario": "normal"}

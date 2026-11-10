@@ -238,7 +238,7 @@ export const useConsoleStore = defineStore('console', () => {
     try {
       if (mode.value === 'live') {
         if (files.length) throw new Error('真实文件上传接口尚未约定，请先移除附件。')
-        const t = await liveApi.create({ title, description, scenario, files: [], permissions, activity })
+        const t = await liveApi.create({ title, description, scenario, files: [], permissions: [], activity })
         t.events = t.events || []
         tasks.value.unshift(t)
         selectedId.value = t.task_id

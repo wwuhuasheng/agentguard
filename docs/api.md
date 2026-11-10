@@ -26,6 +26,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | GET | `/api/health` | 返回 `{ "status": "ok" }`。 |
 | GET | `/api/me` | 返回演示用户 `example.operator`。真实登录和会话鉴权后续接入。 |
 | GET | `/api/tasks` | 按创建时间倒序返回任务，每个任务带完整事件。 |
+| POST | `/api/activities/preview` | 根据本次活动参数只读预估三步工具操作的授权范围与决策，不创建任务。 |
 | POST | `/api/tasks` | 创建任务并立即执行对应场景，返回 201 和 Task。 |
 | GET | `/api/tasks/{task_id}` | 返回单个 Task。 |
 | GET | `/api/tasks/{task_id}/events` | 返回 AuditEvent 数组。 |
@@ -33,6 +34,10 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | POST | `/api/approvals/{approval_id}/decision` | 批准或拒绝一个待确认请求。 |
 | GET | `/api/incidents` | 返回熔断恢复事件。 |
 | GET | `/api/incidents/{incident_id}` | 返回单个 Incident。 |
+
+## 提交前权限预览
+
+请求体包含 `title`、`description` 和与 `activity` 任务相同的结构化 `activity`。返回 `mode: PREVIEW_ONLY` 以及日历创建、共享文件更新、通知发送三张卡片，每张卡片给出操作范围、预计的 `ALLOW / CONFIRM / BLOCK` 和规则理由。预览不会调用 AgentArts、创建任务、签发真实护照、等待审批或执行工具；提交时仍重新评估，因此预览不是最终授权。
 
 ## 创建任务
 
