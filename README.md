@@ -34,7 +34,7 @@ VITE_DATA_MODE=live
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-`backend.api.server:app` 是统一启动入口：控制台接口位于 `/api/*`，原有核心事务接口位于 `/core/api/*`，两者在同一进程共享策略网关。独立运行 `backend.api.app:app` 仅用于核心接口开发和测试。真实 AgentArts 云端工作流尚未接入。接入说明见 [docs/agentarts-integration.md](docs/agentarts-integration.md)，前端演示见 [docs/DEMO.md](docs/DEMO.md)。
+`backend.api.server:app` 是统一启动入口：控制台接口位于 `/api/*`，原有核心事务接口位于 `/core/api/*`，两者在同一进程共享策略网关。独立运行 `backend.api.app:app` 仅用于核心接口开发和测试。已提供 AgentArts 工作流调用桥接代码，**尚未使用真实账号完成云端验证**；默认仍使用本地规划器。接入步骤见 [docs/agentarts-integration.md](docs/agentarts-integration.md)，前端演示见 [docs/DEMO.md](docs/DEMO.md)。
 
 ## 核心能力
 

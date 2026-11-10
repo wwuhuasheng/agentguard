@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.agent_core import ActivitySpec
+from backend.agent_core.agentarts_cloud import AgentArtsError, planner_from_env
 from backend.api.app import create_app as create_core_app
 from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
@@ -72,7 +73,7 @@ class TaskServiceRuntime:
             recovery=RecoveryController(self.service.workspace),
             approval_ttl_seconds=60,
         )
-        self.service.bind_gateway(self.gateway)
+        self.service.bind_gateway(self.gateway, planner_from_env())
 
 
 def create_app() -> FastAPI:
@@ -148,6 +149,8 @@ def create_app() -> FastAPI:
                     else None
                 ),
             )
+        except AgentArtsError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

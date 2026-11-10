@@ -17,6 +17,7 @@ from uuid import uuid4
 from backend.agent_core import (
     ActivitySpec,
     DeterministicAgentArtsAdapter,
+    PlanningAdapter,
     TaskCoordinator,
 )
 from backend.mcp_gateway import MCPGateway, ToolRegistry
@@ -69,9 +70,13 @@ class TaskService:
         self._last_damaged_content = ""
 
     # ------------------------------------------------------------------ setup
-    def bind_gateway(self, gateway: MCPGateway) -> None:
+    def bind_gateway(
+        self, gateway: MCPGateway, planner: Optional[PlanningAdapter] = None
+    ) -> None:
         self.gateway = gateway
-        self.coordinator = TaskCoordinator(gateway, DeterministicAgentArtsAdapter())
+        self.coordinator = TaskCoordinator(
+            gateway, planner or DeterministicAgentArtsAdapter()
+        )
 
     def register_tools(self, registry: ToolRegistry) -> None:
         """Register workspace tools; file updates route through failure logic."""

@@ -214,7 +214,13 @@ async function start() {
       <section v-if="s.current.agent_plan" class="panel padded">
         <span class="eyebrow">AGENT PLAN / TASK PASSPORT</span>
         <h3>规划与授权证据</h3>
-        <p class="helper">当前由本地离线适配器生成计划；此处不代表已接入华为云 AgentArts。</p>
+        <p class="helper">
+          {{
+            s.current.agent_plan.provider === 'huawei-agentarts-workflow'
+              ? '分析证据来自华为云 AgentArts 工作流；执行参数仍由本地可信边界从用户输入生成，工具目前为脱敏模拟。'
+              : '当前由本地离线适配器生成计划；此处不代表已接入华为云 AgentArts。'
+          }}
+        </p>
         <dl class="context-list">
           <div>
             <dt>规划来源</dt>

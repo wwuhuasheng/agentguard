@@ -1,5 +1,60 @@
 # AgentArts接入与部署
 
+## 云端规划桥接（代码已就绪，尚待真实账号验证）
+
+现有控制台 `live` 模式可通过后端调用 AgentArts 已发布工作流。启用后，
+`agent_plan.provider` 显示 `huawei-agentarts-workflow`；若云端报错或输出不符合约定，
+任务创建返回 `502`，**不会静默退回本地模拟结果**。API Key 只保留在后端进程，
+前端不接触密钥。当前云端只负责分析证据，真正的工具参数由用户输入确定，
+再经任务护照、策略网关和人工审批；工具仍是内存模拟，不会发送真实邮件。
+
+先在 AgentArts 创建并发布一个工作流，开始节点定义以下必填变量，名称必须一致：
+`title`、`starts_at`、`location`、`recipient`、`recipient_count`（整数）、
+`notice_content`、`source_trust`。建议依次编排业务规划、内容隔离、行为守卫三个
+Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例：
+
+```json
+{
+  "agent_evidence": [
+    {"role":"BUSINESS_AGENT","conclusion":"活动目标已拆解。","evidence":{}},
+    {"role":"CONTENT_ISOLATION_AGENT","conclusion":"外部内容不继承授权。","evidence":{}},
+    {"role":"BEHAVIOR_GUARD_AGENT","conclusion":"文件更新与通知需策略裁决。","evidence":{}}
+  ]
+}
+```
+
+可将这个 JSON 放在工作流结束节点的 `user_fields.agent_evidence_json`，或作为
+`responseContent` 返回；工作流必须产生 `workflow_finished` 且状态为 `succeeded`。
+后端只接收这三条证据。即使模型输出 `steps`、工具参数或更高的信任级别，
+它们也不会进入执行计划。平台工作流可用只读 MCP 工具 `runtime_status` 验证连接，
+**不要**在当前规划工作流中调用会产生副作用的 MCP 工具，否则会与后端网关重复执行。
+
+账号侧需要完成：开通 AgentArts；接入可用于 API 调用的 MaaS/第三方模型；
+提交工作流版本并勾选“部署至实例”；入站认证选 API Key；复制完整调用路径，
+并从运行时“访问与权限控制”取得 API Key。官方说明：[API 调用前提和取凭证步骤](https://support.huaweicloud.com/bestpractice-agentarts/agentarts_06_0022.html)、[运行时调用接口](https://support.huaweicloud.com/api-agentarts/InvokeRuntime.html)、[SSE 事件格式](https://support.huaweicloud.com/api-agentarts/agentarts_07_0056.html)。
+API 调用会消耗模型额度；平台免费 Token 不能用于该 API，先确认比赛代金券或预算。
+
+在启动后端的终端设置环境变量（Key 只在本机输入，不要发到聊天或提交仓库）：
+
+```bash
+export AGENTGUARD_PLANNER=agentarts
+export AGENTARTS_INVOCATION_URL='https://<控制台访问域名>/runtimes/<运行时名称>/invocations'
+export AGENTARTS_INVOKE_MODE=debug
+read -s AGENTARTS_API_KEY
+export AGENTARTS_API_KEY
+uvicorn backend.api.server:app --port 8000
+```
+
+粘贴 Key 后按回车。完整 URL 必须来自华为云控制台，使用官方 HTTPS 域名；
+切勿使用文档中的占位 URL。前端 `frontend/.env.local` 设置 `VITE_DATA_MODE=live`。
+创建一个使用 `example.org` 接收地址的脱敏活动，检查规划来源及工作流调用链。
+退出当前终端会清除本次临时输入的 Key。默认 `AGENTGUARD_PLANNER=local`，
+因此不配置云端时不会产生模型费用。
+
+这一步只能证明“AgentArts 分析工作流 → 本地安全网关”连通。比赛最终版本还需
+把 MCP Server 部署到华为云、在 AgentArts 中完成工具编排/评估，并提供云端
+调用链及在线 Demo 证据；不能把本地桥接冒充完整云端部署。
+
 ## 作品中的职责边界
 
 ```text
