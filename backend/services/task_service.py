@@ -204,6 +204,7 @@ class TaskService:
         files: Optional[List[Dict[str, object]]] = None,
         permissions: Optional[List[str]] = None,
         activity: Optional[ActivitySpec] = None,
+        source_summary: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
         if scenario not in {"normal", "approval", "block", "recovery", "activity"}:
             raise ValueError(
@@ -215,6 +216,16 @@ class TaskService:
             title, description, scenario, files or [], permissions or []
         )
         self._tasks[task["task_id"]] = task
+        if source_summary is not None:
+            task["source_summary"] = source_summary
+            self._record_service_event(
+                str(task["task_id"]),
+                "SOURCE_INSPECTED",
+                {
+                    **source_summary,
+                    "summary": "已隔离检查脱敏参考资料，资料内容不构成执行授权。",
+                },
+            )
         try:
             if scenario == "activity":
                 assert activity is not None

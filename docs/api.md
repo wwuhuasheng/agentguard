@@ -76,7 +76,11 @@ Live 活动任务示例（时间必须带时区且晚于当前时间）：
 }
 ```
 
-`files` 与 `permissions` 是演示元数据。当前运行时不读取文件内容，也不将其提升为真实授权。
+`files` 与 `permissions` 是演示元数据；运行时不会根据 `files` 读取正文，也不会把客户端传来的 `permissions` 提升为真实授权。
+
+`activity` 任务可额外提交一个 `reference`：`{"name":"活动策划.txt","content":"演示用脱敏资料"}`。仅接受 UTF-8 TXT/CSV、1–32768 字节；CSV 最多 20 列、500 行，列宽须一致。服务端只在请求期间检查正文，不把正文或 CSV 行值保存到任务、事件或规划器输入。响应中的 `source_summary` 仅含文件名、大小、哈希、来源等级、行数、白名单字段及风险标记，并追加 `SOURCE_INSPECTED` 事件。`files` 元数据不能替代 `reference` 正文。
+
+参考资料始终标记为 `EXTERNAL_UNTRUSTED`；其中的收件地址、操作指令和授权声明不会覆盖用户填写的结构化参数。敏感列名会被标记并排除，未知列也不进入可用字段。危险指令标记是启发式提示，**不能**作为准确检出或无风险证明；目前也不会从资料中自动生成计划。文件名和列名仍可能含个人信息，演示请只用自制/脱敏资料。
 
 ## 审批决策
 
@@ -110,7 +114,7 @@ POST /api/approvals/{approval_id}/decision
 ```
 
 Task 状态包含 `EXECUTING`、`WAITING_APPROVAL`、`COMPLETED`、`BLOCKED`、`REJECTED`、`EXPIRED`、`RECOVERING`、`RECOVERED`、`FAILED`。
-`activity` 任务还包含 `agent_plan`（本地规划来源、三角色证据、步骤）和 `passport_id`。这证明的是本地离线链路，不等于已在 AgentArts 上部署。
+`activity` 任务还包含 `agent_plan`（本地规划来源、三角色证据、步骤）和 `passport_id`；提交参考资料时还包含 `source_summary`。这证明的是本地离线链路，不等于已在 AgentArts 上部署。
 
 ## AuditEvent
 
@@ -125,6 +129,6 @@ Task 状态包含 `EXECUTING`、`WAITING_APPROVAL`、`COMPLETED`、`BLOCKED`、`
 }
 ```
 
-事件类型覆盖网关的 `POLICY_DECISION`、`APPROVAL_REQUIRED`、`APPROVAL_RESOLVED`、`TOOL_EXECUTED`、`TOOL_FAILED`，以及服务层的 `APPROVAL_EXPIRED`、`INCIDENT_TRIGGERED`、`ACTION_CANCELLED`、`SNAPSHOT_RESTORED`、`RECOVERY_COMPLETED`。
+事件类型覆盖网关的 `POLICY_DECISION`、`APPROVAL_REQUIRED`、`APPROVAL_RESOLVED`、`TOOL_EXECUTED`、`TOOL_FAILED`，以及服务层的 `SOURCE_INSPECTED`、`APPROVAL_EXPIRED`、`INCIDENT_TRIGGERED`、`ACTION_CANCELLED`、`SNAPSHOT_RESTORED`、`RECOVERY_COMPLETED`。
 
 前端风险证据需要 `payload.tool_request`。服务层序列化时会把请求上下文补齐；审批相关事件还会带 `approval_id` 和 `expires_at`。

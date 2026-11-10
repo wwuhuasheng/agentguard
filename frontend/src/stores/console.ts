@@ -10,6 +10,7 @@ import type {
   FileMeta,
   CurrentUser,
   ActivityInput,
+  ActivityReference,
 } from '../types'
 import { blockReasons, event, permissions, reason, toolRequest, uid } from '../mock/scenarios'
 import { configuredMode, liveApi } from '../api/client'
@@ -231,14 +232,16 @@ export const useConsoleStore = defineStore('console', () => {
     description: string,
     files: FileMeta[],
     replay = false,
-    activity?: ActivityInput
+    activity?: ActivityInput,
+    reference?: ActivityReference
   ) {
     if (busy.value) return
     busy.value = true
     try {
       if (mode.value === 'live') {
-        if (files.length) throw new Error('真实文件上传接口尚未约定，请先移除附件。')
-        const t = await liveApi.create({ title, description, scenario, files: [], permissions: [], activity })
+        const t = await liveApi.create({
+          title, description, scenario, files, permissions: [], activity, reference,
+        })
         t.events = t.events || []
         tasks.value.unshift(t)
         selectedId.value = t.task_id

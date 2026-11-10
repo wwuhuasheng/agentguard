@@ -1,4 +1,4 @@
-import type { Task, AuditEvent, Approval, Incident, FileMeta, CurrentUser, ActivityInput, ActivityPermissionPreview } from '../types'
+import type { Task, AuditEvent, Approval, Incident, FileMeta, CurrentUser, ActivityInput, ActivityPermissionPreview, ActivityReference } from '../types'
 export const configuredMode = import.meta.env.VITE_DATA_MODE === 'live' ? 'live' : 'mock'
 const base = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -30,6 +30,7 @@ export const liveApi = {
     files: FileMeta[]
     permissions: string[]
     activity?: ActivityInput
+    reference?: ActivityReference
   }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(input) }),
   previewActivity: (input: { title: string; description: string; activity: ActivityInput }) =>
     request<ActivityPermissionPreview>('/api/activities/preview', {

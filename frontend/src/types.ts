@@ -91,6 +91,22 @@ export interface FileMeta {
   size: number
   type: string
 }
+export interface ActivityReference {
+  name: string
+  content: string
+}
+export interface SourceSummary {
+  name: string
+  format: 'txt' | 'csv'
+  source_trust: 'EXTERNAL_UNTRUSTED'
+  byte_size: number
+  sha256: string
+  flags: string[]
+  row_count?: number
+  safe_columns?: string[]
+  excluded_column_count?: number
+  sensitive_columns?: string[]
+}
 export interface Task {
   task_id: string
   title: string
@@ -103,6 +119,7 @@ export interface Task {
   permissions: string[]
   events: AuditEvent[]
   replay: boolean
+  source_summary?: SourceSummary
   passport_id?: string
   agent_plan?: {
     provider: string

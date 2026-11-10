@@ -25,6 +25,8 @@ uvicorn backend.api.server:app --reload --port 8000
 
 在任务控制台填写未来活动时间、地点、`example.org` 域名下的接收地址、接收人数和通知内容，先点击“预览本次权限与风险”，观察三步操作的预估决策；提交后到执行轨迹查看三角色规划证据、任务护照、日历工具请求和文件更新审批。批准文件更新后，12 人通知可自动完成；若人数改为 40，通知还需第二次审批。全部为内存模拟工具，并非真实发送。Live 模式当前使用本地离线规划器，不能作为已接入 AgentArts 的证明。
 
+可上传仓库内的 [`activity-reference-injection.txt`](../examples/activity-reference-injection.txt) 或 [`activity-roster-synthetic.csv`](../examples/activity-roster-synthetic.csv)（均为虚构样例）。前者展示外部资料中的越权指令会被标记，但不会改写结构化收件地址；后者展示姓名、手机号列被排除，行值不进入任务记录。轨迹页能查看 `SOURCE_INSPECTED` 摘要。检测规则只是启发式，不能将“未命中”解释成安全；目前资料仅供来源检查，不自动生成活动计划。演示不可上传真实名单或私密文档。
+
 以下四个预置场景仅在 Mock 回放中选择；后端仍保留对应接口供自动化回归。
 
 ## 1. 正常放行

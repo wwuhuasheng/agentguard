@@ -44,6 +44,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - 统一审计事件、模拟工具、失败恢复与熔断；
 - Vue 3 可交互演示控制台；
 - Live 模式可在提交前按本次任务参数预览最小工具范围和预计三态决策，修改参数后旧预览失效；
+- Live 模式可检查一份脱敏 TXT/CSV 参考资料，记录来源与风险摘要，隔离正文和敏感行值；外部资料不能改变用户授权；
 - Live 模式按用户填写的活动参数生成三步事务与任务护照，支持连续审批及可追踪的执行结果；
 - AgentArts 可接入的只读 Streamable HTTP MCP Server（策略预览、运行状态）与 ARM64 部署配置；智能体不能通过 MCP 自行批准或执行工具。
 
@@ -57,6 +58,7 @@ config/              # 策略配置
 deploy/mcp_server/   # MCP Server 和部署配置
 docs/                # 架构、接口与演示说明
 evaluation/          # 评测工作区
+examples/            # 虚构、脱敏的演示参考资料
 frontend/            # Vue 3 控制台
 tests/               # 自动化测试
 ```

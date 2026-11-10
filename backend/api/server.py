@@ -25,6 +25,7 @@ from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
 from backend.recovery import RecoveryController
 from backend.services import DEMO_USER, TaskService
+from backend.source_ingest import inspect_reference
 
 _ROOT = Path(__file__).resolve().parents[2]
 _POLICIES = _ROOT / "config" / "policies.json"
@@ -44,6 +45,11 @@ class ActivityInput(BaseModel):
     recipient_count: int = Field(ge=1, le=1000)
 
 
+class ReferenceInput(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=32768)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str = ""
@@ -51,6 +57,7 @@ class TaskCreate(BaseModel):
     files: list[Dict[str, Any]] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
     activity: Optional[ActivityInput] = None
+    reference: Optional[ReferenceInput] = None
 
 
 class ActivityPreviewInput(BaseModel):
@@ -136,6 +143,11 @@ def create_app() -> FastAPI:
 
     @app.post("/api/tasks", status_code=201)
     def create_task(payload: TaskCreate) -> Dict[str, Any]:
+        if payload.reference is not None and payload.scenario != "activity":
+            raise HTTPException(
+                status_code=422,
+                detail="references are supported only for activity tasks",
+            )
         if payload.scenario == "activity":
             if not payload.description.strip():
                 raise HTTPException(
@@ -144,12 +156,18 @@ def create_app() -> FastAPI:
             if payload.activity is not None:
                 _validate_activity_input(payload.activity)
         try:
+            source_summary = (
+                inspect_reference(payload.reference.name, payload.reference.content)
+                if payload.reference is not None
+                else None
+            )
             return service.create_task(
                 title=payload.title,
                 description=payload.description,
                 scenario=payload.scenario,
                 files=payload.files,
                 permissions=payload.permissions,
+                source_summary=source_summary,
                 activity=(
                     ActivitySpec(
                         title=payload.title,

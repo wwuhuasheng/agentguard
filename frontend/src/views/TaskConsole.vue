@@ -19,7 +19,7 @@ import {
 import { useConsoleStore } from '../stores/console'
 import { liveApi } from '../api/client'
 import { scenarios, permissions } from '../mock/scenarios'
-import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput } from '../types'
+import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput, ActivityReference } from '../types'
 import StatusBadge from '../components/StatusBadge.vue'
 import { time } from '../labels'
 const s = useConsoleStore(),
@@ -33,6 +33,7 @@ const s = useConsoleStore(),
   recipient = ref('participants@example.org'),
   recipientCount = ref(12),
   files = ref<FileMeta[]>([]),
+  reference = ref<ActivityReference | null>(null),
   input = ref<HTMLInputElement>(),
   form = ref<HTMLElement>(),
   query = ref(''),
@@ -105,7 +106,8 @@ async function submit() {
           recipient: recipient.value.trim(),
           recipient_count: Number(recipientCount.value),
         }
-      : undefined
+      : undefined,
+    reference.value || undefined
   )
   if (t) void router.push('/trace')
 }
@@ -145,9 +147,28 @@ async function previewPermissions() {
     previewBusy.value = false
   }
 }
-function addFiles(e: Event) {
+async function addFiles(e: Event) {
   const list = (e.target as HTMLInputElement).files
   if (!list) return
+  if (s.mode === 'live') {
+    const file = list[0]
+    if (file) {
+      reference.value = null
+      files.value = []
+      try {
+        if (!/\.(txt|csv)$/i.test(file.name)) throw new Error('Live 模式仅支持 TXT/CSV。')
+        if (file.size < 1 || file.size > 32 * 1024)
+          throw new Error('资料须为 1–32 KB 的脱敏文本。')
+        const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
+        reference.value = { name: file.name, content }
+        files.value = [{ name: file.name, size: file.size, type: file.type }]
+      } catch (error) {
+        s.notify(error instanceof Error ? error.message : '读取资料失败')
+      }
+    }
+    ;(e.target as HTMLInputElement).value = ''
+    return
+  }
   for (const f of list) {
     if (f.size > 10 * 1024 * 1024) {
       s.notify('单个附件不能超过 10 MB')
@@ -161,6 +182,10 @@ function addFiles(e: Event) {
       files.value.push({ name: f.name, size: f.size, type: f.type })
   }
   ;(e.target as HTMLInputElement).value = ''
+}
+function removeFile(index: number) {
+  files.value.splice(index, 1)
+  if (s.mode === 'live') reference.value = null
 }
 function openTask(id: string) {
   s.select(id)
@@ -301,21 +326,20 @@ function focusForm() {
               ><small>{{ x.subtitle }}</small>
             </button>
           </div></template
-        ><label class="upload-box" :class="{ disabled: s.mode === 'live' }"
+        ><label class="upload-box"
           ><Upload :size="21" /><span
-            ><strong>选择活动资料</strong><small>PDF / CSV / TXT · 每个不超过 10 MB</small></span
+            ><strong>选择活动资料</strong><small>{{ s.mode === 'live' ? '脱敏 TXT / CSV · 最多 32 KB' : 'PDF / CSV / TXT · 每个不超过 10 MB' }}</small></span
           ><Plus :size="17" /><input
             type="file"
-            multiple
-            accept=".pdf,.csv,.txt,.md,.xlsx"
-            :disabled="s.mode === 'live'"
+            :multiple="s.mode === 'mock'"
+            :accept="s.mode === 'live' ? '.txt,.csv' : '.pdf,.csv,.txt,.md,.xlsx'"
             @change="addFiles"
         /></label>
         <p class="helper">
           {{
             s.mode === 'mock'
               ? '附件仅记录文件名和大小；本演示使用预置资料，不读取附件内容。'
-              : '文件上传接口尚未确认，真实模式暂不接收附件。'
+              : '仅使用自制或已脱敏资料；后端只保留摘要和风险标记，不保存正文，也不向 AgentArts 发送正文。'
           }}
         </p>
         <div v-if="files.length" class="file-list">
@@ -326,7 +350,7 @@ function focusForm() {
               type="button"
               class="icon-button"
               :aria-label="'移除 ' + f.name"
-              @click="files.splice(i, 1)"
+              @click="removeFile(i)"
             >
               <X :size="14" />
             </button>
@@ -339,7 +363,7 @@ function focusForm() {
             <li>禁止删除原文件，禁止外发敏感字段</li>
           </ul>
         </details>
-        <p v-else class="helper">Live 模式只使用上方填写的活动参数；目前不读取附件内容。点击“预览本次权限与风险”查看本次任务的实际工具范围。</p>
+        <p v-else class="helper">Live 模式的执行参数只来自上方填写的活动信息；TXT/CSV 只作为外部参考资料检查，不会改变收件人或工具权限。</p>
         <div class="form-bottom">
           <span><ShieldCheck :size="14" />所有工具请求均经过策略检查</span
           ><button class="button primary" type="submit" :disabled="s.busy">

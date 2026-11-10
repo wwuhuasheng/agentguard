@@ -210,6 +210,19 @@ async function start() {
       </div>
     </section>
     <aside class="trace-aside">
+      <section v-if="s.current.source_summary" class="panel padded">
+        <span class="eyebrow">SOURCE / UNTRUSTED REFERENCE</span>
+        <h3>外部资料检查</h3>
+        <p class="helper">只保留摘要和风险标记，资料正文不进入工具参数，也不发送至 AgentArts。</p>
+        <dl class="context-list">
+          <div><dt>文件</dt><dd>{{ s.current.source_summary.name }}</dd></div>
+          <div><dt>来源等级</dt><dd>{{ trustLabels[s.current.source_summary.source_trust] }}</dd></div>
+          <div v-if="s.current.source_summary.row_count !== undefined"><dt>CSV 数据行</dt><dd>{{ s.current.source_summary.row_count }}</dd></div>
+          <div v-if="s.current.source_summary.safe_columns?.length"><dt>可用字段</dt><dd>{{ s.current.source_summary.safe_columns.join('、') }}</dd></div>
+          <div v-if="s.current.source_summary.sensitive_columns?.length"><dt>已排除敏感字段</dt><dd>{{ s.current.source_summary.sensitive_columns.join('、') }}</dd></div>
+          <div><dt>风险标记</dt><dd>{{ s.current.source_summary.flags.length ? s.current.source_summary.flags.join('、') : '未命中启发式规则' }}</dd></div>
+        </dl>
+      </section>
       <RiskCard v-if="evidence" :event="evidence" />
       <section v-if="s.current.agent_plan" class="panel padded">
         <span class="eyebrow">AGENT PLAN / TASK PASSPORT</span>
