@@ -135,7 +135,7 @@ curl -X POST http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-2026 年 11 月 10 日，已在本机临时 Python 3.12 环境使用锁定的 `mcp==1.28.1` 复验最新代码：Streamable HTTP `initialize` 协商 `2025-03-26` 成功；`tools/list` 仅返回 `preview_activity`、`runtime_status`；两个 `tools/call` 均成功，`preview_activity` 返回 `PREVIEW_ONLY` 和三步 `ALLOW / CONFIRM / CONFIRM`。这次**没有重新构建 ARM64 镜像**（本机 Docker 服务未运行），也没有验证华为云运行时。后端活动事务中的文件修改和群发通知仍会停在`WAITING_CONFIRMATION`；MCP 预览本身不会创建事务。本地协议测试不能替代云上AgentArts部署证据。
+2026 年 11 月 10 日，已在本机临时 Python 3.12 环境使用锁定的 `mcp==1.28.1` 复验最新代码。2026 年 11 月 11 日，又用当前代码复建并加载 `linux/arm64` 镜像 `agentguard-mcp:local-20261110`，在本机回环端口实际运行容器：`/ping` 返回 `ok`；Streamable HTTP `initialize` 协商 `2025-03-26` 成功；`tools/list` 仅返回 `preview_activity`、`runtime_status`；两个 `tools/call` 均成功，`preview_activity` 返回 `PREVIEW_ONLY` 和三步 `ALLOW / CONFIRM / CONFIRM`。临时容器已停止。上述是**本地容器验证**，尚未上传 SWR、部署 AgentArts 运行时或验证云端调用；本地协议结果不能替代云上证据。
 
 ## AgentArts控制台步骤
 
@@ -170,5 +170,5 @@ curl -X POST http://127.0.0.1:8080/mcp \
 - 服务状态仍保存在单进程内存中，只适合初赛原型和单副本演示；
 - 演示 API 无真实用户认证，不可直接部署成公网可写服务；
 - 正式多副本部署前需将任务、护照、审批和Trace持久化；
-- 真实AgentArts工作流、调用链截图和平台评估需在取得云账号与模型资源后完成；
+- 真实AgentArts工作流、调用链截图和平台评估仍待账号登录、平台可用及模型资源确认后完成；2026 年 11 月 11 日 Chrome 跳转华为云登录页时出现 `ERR_CONNECTION_CLOSED`，因此未开展云端操作；
 - 不得在仓库提交API Key、Token或`.agentarts_config.yaml`。
