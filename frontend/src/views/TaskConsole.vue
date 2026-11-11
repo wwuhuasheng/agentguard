@@ -32,6 +32,7 @@ const s = useConsoleStore(),
   location = ref('社区服务中心'),
   recipient = ref('participants@example.org'),
   recipientCount = ref(12),
+  updateSharedFile = ref(true),
   files = ref<FileMeta[]>([]),
   reference = ref<ActivityReference | null>(null),
   input = ref<HTMLInputElement>(),
@@ -59,6 +60,7 @@ const currentPreviewKey = computed(() =>
     location.value.trim(),
     recipient.value.trim(),
     recipientCount.value,
+    updateSharedFile.value,
   ])
 )
 const visiblePreview = computed(() =>
@@ -114,6 +116,7 @@ async function submit() {
           location: location.value.trim(),
           recipient: recipient.value.trim(),
           recipient_count: Number(recipientCount.value),
+          update_shared_file: updateSharedFile.value,
         }
       : undefined,
     reference.value || undefined
@@ -137,6 +140,7 @@ async function previewPermissions() {
     location: location.value.trim(),
     recipient: recipient.value.trim(),
     recipient_count: Number(recipientCount.value),
+    update_shared_file: updateSharedFile.value,
   }
   const key = currentPreviewKey.value
   previewBusy.value = true
@@ -327,6 +331,11 @@ function focusForm() {
               <input id="activity-count" v-model.number="recipientCount" type="number" min="1" max="1000" required />
             </div>
           </div>
+          <label class="activity-action-choice" for="update-shared-file">
+            <input id="update-shared-file" v-model="updateSharedFile" type="checkbox" />
+            <span>同时更新共享活动文件</span>
+          </label>
+          <p class="helper">取消后，本次任务不申请文件更新权限；Agent 后续追加该操作会被阻断。日历和通知仍按当前参数执行。</p>
           <p class="helper">当前演示策略仅允许 example.org 域名；超过 30 人发送通知需二次审批。这里使用内存模拟工具，不会真实发送邮件。</p>
           <button class="button" type="button" :disabled="previewBusy" @click="previewPermissions">
             <ShieldCheck :size="16" />{{ previewBusy ? '正在预览…' : '预览本次权限与风险' }}

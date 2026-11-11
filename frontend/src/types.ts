@@ -58,6 +58,7 @@ export interface ActivityInput {
   location: string
   recipient: string
   recipient_count: number
+  update_shared_file: boolean
 }
 export interface ActivityPermissionPreview {
   mode: 'PREVIEW_ONLY'

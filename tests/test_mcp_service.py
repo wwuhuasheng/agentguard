@@ -142,6 +142,21 @@ class MCPServiceTests(unittest.TestCase):
         )
         self.assertEqual(self.service.workspace.notifications, [])
 
+    def test_preview_respects_file_update_opt_out(self):
+        preview = self.service.preview_activity(
+            title="社区公益活动",
+            starts_at="2026-12-01T09:00:00+08:00",
+            location="社区服务中心",
+            recipient="participants@example.org",
+            recipient_count=20,
+            notice_content="活动提醒",
+            update_shared_file=False,
+        )
+        self.assertEqual(
+            [step["tool_name"] for step in preview["steps"]],
+            ["calendar", "send_notice"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,6 +30,7 @@ class AgentGuardMCPService:
         recipient_count: int,
         notice_content: str,
         source_trust: str = "MODEL_GENERATED",
+        update_shared_file: bool = True,
     ) -> Dict[str, Any]:
         """Assess a hypothetical plan without touching live tasks or tools.
 
@@ -45,6 +46,7 @@ class AgentGuardMCPService:
             recipient_count=recipient_count,
             notice_content=notice_content,
             source_trust=self._trust_level(source_trust),
+            update_shared_file=update_shared_file,
         )
         return preview_activity_permissions(self.gateway.engine.repository, spec)
 

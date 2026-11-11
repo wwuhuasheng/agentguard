@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from backend.agent_core import ActivitySpec
 from backend.agent_core.agentarts_cloud import AgentArtsError, planner_from_env
@@ -25,7 +25,11 @@ from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
 from backend.recovery import RecoveryController
 from backend.services import DEMO_USER, TaskService
-from backend.source_ingest import inspect_reference, preview_reference_review
+from backend.source_ingest import (
+    inspect_reference,
+    preview_reference_review,
+    safe_reference_signals,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _POLICIES = _ROOT / "config" / "policies.json"
@@ -43,6 +47,7 @@ class ActivityInput(BaseModel):
     location: str = Field(min_length=1, max_length=120)
     recipient: str = Field(min_length=3, max_length=254)
     recipient_count: int = Field(ge=1, le=1000)
+    update_shared_file: StrictBool = True
 
 
 class ReferenceInput(BaseModel):
@@ -141,6 +146,7 @@ def create_app() -> FastAPI:
                     recipient=activity.recipient,
                     recipient_count=activity.recipient_count,
                     notice_content=payload.description,
+                    update_shared_file=activity.update_shared_file,
                 ),
             )
         except ValueError as error:
@@ -192,6 +198,12 @@ def create_app() -> FastAPI:
                         recipient=payload.activity.recipient,
                         recipient_count=payload.activity.recipient_count,
                         notice_content=payload.description,
+                        update_shared_file=payload.activity.update_shared_file,
+                        reference_signals=(
+                            safe_reference_signals(source_summary)
+                            if source_summary is not None
+                            else None
+                        ),
                     )
                     if payload.activity is not None
                     else None

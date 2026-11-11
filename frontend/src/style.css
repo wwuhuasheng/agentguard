@@ -713,6 +713,22 @@ main {
 .task-form textarea {
   width: 100%;
 }
+.task-form .activity-action-choice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 17px 0 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-form .activity-action-choice input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  accent-color: #202020;
+}
 .activity-input-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -152,6 +152,12 @@ class AgentArtsWorkflowPlanner:
                 "recipient_count": spec.recipient_count,
                 "notice_content": spec.notice_content,
                 "source_trust": spec.source_trust.value,
+                "update_shared_file": spec.update_shared_file,
+                "reference_signals_json": json.dumps(
+                    spec.reference_signals or {"present": False},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
             },
             session_id=task_id,
         )

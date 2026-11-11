@@ -26,7 +26,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | GET | `/api/health` | 返回 `{ "status": "ok" }`。 |
 | GET | `/api/me` | 返回演示用户 `example.operator`。真实登录和会话鉴权后续接入。 |
 | GET | `/api/tasks` | 按创建时间倒序返回任务，每个任务带完整事件。 |
-| POST | `/api/activities/preview` | 根据本次活动参数只读预估三步工具操作的授权范围与决策，不创建任务。 |
+| POST | `/api/activities/preview` | 根据本次活动参数只读预估所选工具操作的授权范围与决策，不创建任务。 |
 | POST | `/api/activities/reference-preview` | 对一份脱敏 TXT/CSV 做只读资料核对建议，不创建任务。 |
 | POST | `/api/tasks` | 创建任务并立即执行对应场景，返回 201 和 Task。 |
 | GET | `/api/tasks/{task_id}` | 返回单个 Task。 |
@@ -38,7 +38,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 
 ## 提交前权限预览
 
-请求体包含 `title`、`description` 和与 `activity` 任务相同的结构化 `activity`。返回 `mode: PREVIEW_ONLY` 以及日历创建、共享文件更新、通知发送三张卡片，每张卡片给出操作范围、预计的 `ALLOW / CONFIRM / BLOCK` 和规则理由。预览不会调用 AgentArts、创建任务、签发真实护照、等待审批或执行工具；提交时仍重新评估，因此预览不是最终授权。
+请求体包含 `title`、`description` 和与 `activity` 任务相同的结构化 `activity`。`activity.update_shared_file` 为可选布尔值，默认 `true`；设为 `false` 后仅预览日历与通知两步，且实际任务护照不会包含共享文件更新。返回 `mode: PREVIEW_ONLY` 及所选操作的范围、预计的 `ALLOW / CONFIRM / BLOCK` 和规则理由。预览不会调用 AgentArts、创建任务、签发真实护照、等待审批或执行工具；提交时仍重新评估，因此预览不是最终授权。
 
 ## 创建任务
 
@@ -61,7 +61,7 @@ POST /api/tasks
 - `approval`：40 人通知触发 `CONFIRM`，等待 `/decision`。
 - `block`：外部不可信请求发送敏感字段到外部邮箱，预期 `BLOCK`。
 - `recovery`：共享文件更新先确认；批准后连续失败三次，熔断并恢复快照。
-- `activity`：使用用户提交的时间、地点、通知对象和人数生成三步事务；共享文件更新须确认，超过 30 人通知还会再次确认。返回 `agent_plan` 与 `passport_id` 供前端展示。
+- `activity`：使用用户提交的时间、地点、通知对象和人数生成两/三步事务；共享文件更新可由用户取消，若保留则须确认，超过 30 人通知还会再次确认。返回 `agent_plan` 与 `passport_id` 供前端展示。
 
 Live 活动任务示例（时间必须带时区且晚于当前时间）：
 

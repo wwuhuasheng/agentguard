@@ -64,6 +64,19 @@ def inspect_reference(name: str, content: str) -> Dict[str, Any]:
     return result
 
 
+def safe_reference_signals(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Allowlisted, value-free facts that an advisory cloud agent may receive."""
+    return {
+        "present": True,
+        "format": summary["format"],
+        "row_count": summary.get("row_count"),
+        "has_sensitive_columns": bool(summary.get("sensitive_columns")),
+        "possible_instruction": (
+            "POSSIBLE_INSTRUCTION_IN_REFERENCE" in summary["flags"]
+        ),
+    }
+
+
 def preview_reference_review(
     name: str, content: str, recipient_count: int
 ) -> Dict[str, Any]:

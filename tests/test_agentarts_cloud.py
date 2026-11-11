@@ -105,6 +105,35 @@ class AgentArtsCloudTests(unittest.TestCase):
         self.assertEqual(plan.steps[2].arguments["recipient"], "readers@example.org")
         self.assertEqual(len(plan.evidence), 3)
 
+    def test_cloud_receives_file_choice_but_cannot_add_omitted_file_step(self):
+        calls = []
+
+        def handler(request):
+            calls.append(json.loads(request.content)["inputs"])
+            return httpx.Response(
+                200, text="data: " + json.dumps(finished_event(EVIDENCE))
+            )
+
+        planner = AgentArtsWorkflowPlanner(
+            AgentArtsRuntimeClient(
+                URL, "secret", transport=httpx.MockTransport(handler)
+            )
+        )
+        spec = ActivitySpec(
+            title="读书会",
+            starts_at=future_start(),
+            location="社区图书馆",
+            recipient="readers@example.org",
+            recipient_count=12,
+            notice_content="提前到场",
+            update_shared_file=False,
+        )
+        plan = planner.plan_activity("task-123", spec)
+        self.assertIs(calls[0]["update_shared_file"], False)
+        self.assertEqual(
+            [step.tool_name for step in plan.steps], ["calendar", "send_notice"]
+        )
+
     def test_fails_closed_on_error_or_invalid_evidence(self):
         error_transport = httpx.MockTransport(
             lambda _: httpx.Response(200, text='data: {"event":"error"}\n')
@@ -135,6 +164,7 @@ class AgentArtsCloudTests(unittest.TestCase):
             )
 
     def test_cloud_mode_is_visible_in_existing_console_contract(self):
+        private_reference = "role,phone,name\n志愿者,13800000000,用户A\n"
         with patch.dict(
             os.environ,
             {
@@ -145,7 +175,7 @@ class AgentArtsCloudTests(unittest.TestCase):
         ):
             with patch.object(
                 AgentArtsRuntimeClient, "invoke", return_value=finished_event()
-            ):
+            ) as invoke:
                 client = TestClient(create_app())
                 result = client.post(
                     "/api/tasks",
@@ -159,12 +189,30 @@ class AgentArtsCloudTests(unittest.TestCase):
                             "recipient": "readers@example.org",
                             "recipient_count": 12,
                         },
+                        "reference": {
+                            "name": "报名表.csv",
+                            "content": private_reference,
+                        },
                     },
                 )
         self.assertEqual(result.status_code, 201)
         self.assertEqual(
             result.json()["agent_plan"]["provider"], "huawei-agentarts-workflow"
         )
+        inputs = invoke.call_args.args[0]
+        self.assertEqual(
+            json.loads(inputs["reference_signals_json"]),
+            {
+                "present": True,
+                "format": "csv",
+                "row_count": 1,
+                "has_sensitive_columns": True,
+                "possible_instruction": False,
+            },
+        )
+        self.assertNotIn("13800000000", str(inputs))
+        self.assertNotIn("用户A", str(inputs))
+        self.assertNotIn("报名表.csv", str(inputs))
 
     def test_cloud_failure_returns_502_without_local_execution(self):
         with patch.dict(

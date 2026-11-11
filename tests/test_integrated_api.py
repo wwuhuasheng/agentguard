@@ -64,6 +64,53 @@ class IntegratedAPITests(unittest.TestCase):
         self.assertIn("RECIPIENT_DOMAIN_DENIED", notice["reasons"])
         self.assertEqual(self.app.state.runtime.service.workspace.notifications, [])
 
+    def test_opted_out_file_update_is_absent_from_preview_and_execution(self):
+        activity = {
+            "starts_at": future_start(),
+            "location": "社区图书馆",
+            "recipient": "readers@example.org",
+            "recipient_count": 12,
+            "update_shared_file": False,
+        }
+        payload = {
+            "title": "周末读书会",
+            "description": "请提前到场",
+            "activity": activity,
+        }
+        original_files = dict(self.app.state.runtime.service.workspace.files)
+        preview = self.client.post("/api/activities/preview", json=payload)
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(
+            [step["tool_name"] for step in preview.json()["steps"]],
+            ["calendar", "send_notice"],
+        )
+        created = self.client.post(
+            "/api/tasks", json={**payload, "scenario": "activity"}
+        )
+        self.assertEqual(created.status_code, 201)
+        task = created.json()
+        self.assertEqual(task["status"], "COMPLETED")
+        self.assertEqual(task["agent_plan"]["step_count"], 2)
+        self.assertEqual(self.app.state.runtime.service.workspace.files, original_files)
+        self.assertEqual(len(self.app.state.runtime.service.workspace.notifications), 1)
+
+    def test_activity_rejects_non_boolean_file_choice(self):
+        response = self.client.post(
+            "/api/activities/preview",
+            json={
+                "title": "周末读书会",
+                "description": "请提前到场",
+                "activity": {
+                    "starts_at": future_start(),
+                    "location": "社区图书馆",
+                    "recipient": "readers@example.org",
+                    "recipient_count": 12,
+                    "update_shared_file": "false",
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
     def test_reference_review_is_read_only_and_does_not_return_personal_rows(self):
         text = "role,phone\n志愿者,00000000001\n主持人,00000000002\n"
         response = self.client.post(
@@ -114,6 +161,20 @@ class IntegratedAPITests(unittest.TestCase):
         self.assertEqual(task["source_summary"]["source_trust"], "EXTERNAL_UNTRUSTED")
         self.assertIn(
             "POSSIBLE_INSTRUCTION_IN_REFERENCE", task["source_summary"]["flags"]
+        )
+        isolation = next(
+            evidence for evidence in task["agent_plan"]["agent_evidence"]
+            if evidence["role"] == "CONTENT_ISOLATION_AGENT"
+        )
+        self.assertEqual(
+            isolation["evidence"]["reference_signals"],
+            {
+                "present": True,
+                "format": "txt",
+                "row_count": None,
+                "has_sensitive_columns": False,
+                "possible_instruction": True,
+            },
         )
         self.assertNotIn(attack, str(task))
         self.assertEqual(task["events"][0]["event_type"], "SOURCE_INSPECTED")

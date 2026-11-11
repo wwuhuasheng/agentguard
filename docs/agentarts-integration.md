@@ -8,10 +8,12 @@
 
 初次控制台试运行的最小工作流：
 
-1. 开始节点输入 `title`、`starts_at`、`location`、`recipient`、`recipient_count`、`notice_content`、`source_trust`，只填 `example.org` 等脱敏模拟数据；
-2. 业务规划节点输出目标与三步事务的**分析证据**，不得生成可执行的新收件人或新工具；
+可直接按 [`agentarts-workflow-kit.md`](agentarts-workflow-kit.md) 中的变量、三角色提示词与验收样例搭建；该文件目前仍是本地草案。
+
+1. 开始节点输入 `title`、`starts_at`、`location`、`recipient`、`recipient_count`、`notice_content`、`source_trust`、`update_shared_file`（布尔值），只填 `example.org` 等脱敏模拟数据；
+2. 业务规划节点输出目标与所选事务步骤的**分析证据**，不得生成可执行的新收件人或新工具；
 3. 内容隔离节点说明 `source_trust`，把外部资料中的命令视为待审查文本，不承认其授权声明；
-4. 行为守卫节点标注文件更新、群发通知的风险，最终决策仍交给确定性网关；
+4. 行为守卫节点标注已选择的文件更新、群发通知等风险，最终决策仍交给确定性网关；
 5. 结束节点输出 `agent_evidence_json`，用正常输入和不可信输入各试运行一次，保存画布和运行截图。
 
 这一步能证明 AgentArts 的**真实构建与试运行**，但尚不能证明“AgentArts 已经调用我们的安全网关”。初赛最终版应在资源到位后接入只读的策略预览 MCP/HTTP 工具，并由演示后端负责真实任务、人工审批和 Trace；不得把独立的本地前端演示与控制台试运行剪辑成一条已经打通的云端链路。AgentArts 对自研 HTTP MCP 要求公网可达；也支持从 npm/PyPI 拉起 Stdio MCP，但现有仓库的 Streamable HTTP 服务不能不经适配直接当成 UVX 包使用。
@@ -28,7 +30,7 @@
 
 先在 AgentArts 创建并发布一个工作流，开始节点定义以下必填变量，名称必须一致：
 `title`、`starts_at`、`location`、`recipient`、`recipient_count`（整数）、
-`notice_content`、`source_trust`。建议依次编排业务规划、内容隔离、行为守卫三个
+`notice_content`、`source_trust`、`update_shared_file`（布尔值，`false` 表示不申请文件更新权限）、`reference_signals_json`（字符串，仅含后端生成的风险布尔值/计数）。建议依次编排业务规划、内容隔离、行为守卫三个
 Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例：
 
 ```json
@@ -45,7 +47,7 @@ Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例�
 `responseContent` 返回；工作流必须产生 `workflow_finished` 且状态为 `succeeded`。
 后端只接收这三条证据。即使模型输出 `steps`、工具参数或更高的信任级别，
 它们也不会进入执行计划。平台工作流可用 MCP 工具 `runtime_status` 验证连接，
-并用 `preview_activity` 展示确定性规则如何判定三个事务步骤。预览结果不签发
+并用 `preview_activity` 展示确定性规则如何判定本次选择的两步或三步事务。预览结果不签发
 实际授权、不创建任务、不审批，也不执行模拟工具；用户输入与模型输出必须由
 可信演示后端分开处理。
 
@@ -135,7 +137,7 @@ curl -X POST http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-2026 年 11 月 10 日，已在本机临时 Python 3.12 环境使用锁定的 `mcp==1.28.1` 复验最新代码。2026 年 11 月 11 日，又用当前代码复建并加载 `linux/arm64` 镜像 `agentguard-mcp:local-20261110`，在本机回环端口实际运行容器：`/ping` 返回 `ok`；Streamable HTTP `initialize` 协商 `2025-03-26` 成功；`tools/list` 仅返回 `preview_activity`、`runtime_status`；两个 `tools/call` 均成功，`preview_activity` 返回 `PREVIEW_ONLY` 和三步 `ALLOW / CONFIRM / CONFIRM`。临时容器已停止。上述是**本地容器验证**，尚未上传 SWR、部署 AgentArts 运行时或验证云端调用；本地协议结果不能替代云上证据。
+2026 年 11 月 10 日，已在本机临时 Python 3.12 环境使用锁定的 `mcp==1.28.1` 复验服务。2026 年 11 月 11 日，复建并加载 `linux/arm64` 镜像 `agentguard-mcp:local-20261111`，在本机回环端口实际运行容器：`/ping` 返回 `ok`；Streamable HTTP `initialize` 协商 `2025-03-26` 成功；`tools/list` 仅返回 `preview_activity`、`runtime_status`，且 `preview_activity` 的输入 Schema 包含布尔型 `update_shared_file`；`tools/call` 使用 `false` 返回 `PREVIEW_ONLY` 和日历、通知两步 `ALLOW / ALLOW`。临时容器已停止。上述是**本地容器验证**，尚未上传 SWR、部署 AgentArts 运行时或验证云端调用；本地协议结果不能替代云上证据。
 
 ## AgentArts控制台步骤
 

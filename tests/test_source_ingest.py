@@ -1,6 +1,10 @@
 import unittest
 
-from backend.source_ingest import inspect_reference, preview_reference_review
+from backend.source_ingest import (
+    inspect_reference,
+    preview_reference_review,
+    safe_reference_signals,
+)
 
 
 class SourceIngestTests(unittest.TestCase):
@@ -21,6 +25,23 @@ class SourceIngestTests(unittest.TestCase):
         self.assertIn("SENSITIVE_COLUMNS_EXCLUDED", result["flags"])
         self.assertNotIn("13800000000", str(result))
         self.assertNotIn("用户A", str(result))
+
+    def test_cloud_signals_exclude_name_hash_columns_and_row_values(self):
+        text = "role,phone,name\n志愿者,13800000000,用户A\n"
+        summary = inspect_reference("报名表.csv", text)
+        signals = safe_reference_signals(summary)
+        self.assertEqual(
+            signals,
+            {
+                "present": True,
+                "format": "csv",
+                "row_count": 1,
+                "has_sensitive_columns": True,
+                "possible_instruction": False,
+            },
+        )
+        for private in ("报名表", "13800000000", "用户A", "phone", "sha256"):
+            self.assertNotIn(private, str(signals))
 
     def test_unsupported_or_oversized_reference_is_rejected(self):
         for name, content in (

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 from backend.models import ToolRequest, TrustLevel
 
@@ -22,6 +22,8 @@ class ActivitySpec:
     recipient_count: int
     notice_content: str
     source_trust: TrustLevel = TrustLevel.USER_CONFIRMED
+    update_shared_file: bool = True
+    reference_signals: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)

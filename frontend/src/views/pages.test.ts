@@ -138,6 +138,29 @@ describe('rendered page interactions', () => {
     await wrapper!.get('#activity-count').setValue('12')
     expect(wrapper!.find('[aria-label="本次权限预览"]').exists()).toBe(false)
   })
+  it('omits file update from both preview and submitted activity when unchecked', async () => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: url.includes('/preview') ? 200 : 201,
+      json: async () => url.includes('/preview')
+        ? { mode: 'PREVIEW_ONLY', warning: '预览', steps: [] }
+        : {
+            task_id: 'activity-without-file', title: '社区公益活动安排', description: '活动通知',
+            scenario: 'activity', status: 'COMPLETED', created_at: '2026-11-06T02:00:00Z',
+            updated_at: '2026-11-06T02:00:00Z', files: [], permissions: [], events: [], replay: false,
+          },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await render(TaskConsole, true)
+    await wrapper!.get('#activity-time').setValue('2026-11-15T10:00')
+    await wrapper!.get('#update-shared-file').setValue(false)
+    await wrapper!.findAll('button').find((b) => b.text().includes('预览本次权限'))!.trigger('click')
+    await flushPromises()
+    expect(JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body)).activity.update_shared_file).toBe(false)
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body)).activity.update_shared_file).toBe(false)
+  })
   it('reads a de-identified TXT reference in live mode and includes it in the task request', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

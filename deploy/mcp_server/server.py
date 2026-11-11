@@ -29,6 +29,7 @@ def preview_activity(
     recipient_count: int,
     notice_content: str,
     source_trust: str = "MODEL_GENERATED",
+    update_shared_file: bool = True,
 ) -> Dict[str, Any]:
     """Preview policy decisions only; never create tasks or execute tools."""
 
@@ -40,6 +41,7 @@ def preview_activity(
         recipient_count,
         notice_content,
         source_trust,
+        update_shared_file,
     )
 
 
