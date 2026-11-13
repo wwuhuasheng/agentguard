@@ -238,6 +238,36 @@ describe('rendered page interactions', () => {
     await wrapper!.get('#activity-count').setValue('2')
     expect(wrapper!.find('[aria-label="资料核对建议"]').exists()).toBe(false)
   })
+  it('fills activity fields from a TXT draft only after an explicit click', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({
+        mode: 'PREVIEW_ONLY', source_summary: {}, checks: [],
+        schedule_proposal: null,
+        activity_draft: {
+          starts_at: '2026-12-20T09:00+08:00', location: '社区服务中心',
+          warning: '仅供核对。',
+        },
+        warning: '仅供核对。',
+      }),
+    })))
+    await render(TaskConsole, true)
+    const text = '活动时间：2026-12-20T09:00+08:00\n活动地点：社区服务中心\n'
+    const file = new File([text], '策划.txt', { type: 'text/plain' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode(text).buffer,
+    })
+    const input = wrapper!.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    await input.trigger('change')
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对资料与通知人数'))!.trigger('click')
+    await flushPromises()
+    expect((wrapper!.get('#activity-time').element as HTMLInputElement).value).toBe('')
+    expect(wrapper!.get('[aria-label="活动信息草案"]').text()).toContain('社区服务中心')
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对后填入时间地点'))!.trigger('click')
+    expect((wrapper!.get('#activity-time').element as HTMLInputElement).value).toBe('2026-12-20T09:00')
+    expect((wrapper!.get('#activity-location').element as HTMLInputElement).value).toBe('社区服务中心')
+  })
   it('filters task records by title', async () => {
     await render(TaskConsole)
     await wrapper!.get('[aria-label="搜索任务"]').setValue('impossible-name')

@@ -42,7 +42,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 
 ## 创建任务
 
-提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role,availability\n志愿者,上午\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary`、`checks` 和可为空的 `schedule_proposal`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；含 `availability`、`可参与时段`、`shift` 或 `班次` 列时，仅识别标准的上午、下午、全天/均可等值，输出匿名行号与建议班次；无法识别的值留待人工安排，不返回姓名、电话或原始单元格。TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；排班只是只读草案，接口不自动改表单、不发通知、不保存任务。改变资料或人数后应重新预览。
+提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role,availability\n志愿者,上午\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary`、`checks`、可为空的 `schedule_proposal` 和 `activity_draft`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；含 `availability`、`可参与时段`、`shift` 或 `班次` 列时，仅识别标准的上午、下午、全天/均可等值，输出匿名行号与建议班次；无法识别的值留待人工安排，不返回姓名、电话或原始单元格。TXT 可从独立行的 `活动时间：YYYY-MM-DDTHH:MM+08:00`（或 +09:00、+00:00）与 `活动地点：...` 提取待核对草案；只有用户在页面明确点击采纳，才填入时间和地点。TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；草案不自动发通知、不创建任务、不保存资料正文。改变资料或人数后应重新预览。
 
 ```json
 POST /api/tasks

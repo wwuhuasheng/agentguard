@@ -182,6 +182,16 @@ async function previewReference() {
     referenceBusy.value = false
   }
 }
+function adoptActivityDraft() {
+  const draft = visibleReferenceReview.value?.activity_draft
+  if (!draft) return
+  const match = draft.starts_at.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(\+08:00|\+09:00|\+00:00)$/)
+  if (!match) return
+  startsAt.value = match[1]!
+  timezoneOffset.value = match[2]!
+  location.value = draft.location
+  s.notify('已填入时间和地点；请核对后再预览权限并提交。')
+}
 async function addFiles(e: Event) {
   const list = (e.target as HTMLInputElement).files
   if (!list) return
@@ -402,6 +412,13 @@ function focusForm() {
           </button>
           <div v-if="visibleReferenceReview" class="permission-preview" aria-label="资料核对建议">
             <p class="helper">{{ visibleReferenceReview.warning }}</p>
+            <article v-if="visibleReferenceReview.activity_draft" class="permission-preview-item" aria-label="活动信息草案">
+              <strong>从策划 TXT 提取的活动信息 · 待核对</strong>
+              <p>时间：{{ visibleReferenceReview.activity_draft.starts_at }}</p>
+              <p>地点：{{ visibleReferenceReview.activity_draft.location }}</p>
+              <small>{{ visibleReferenceReview.activity_draft.warning }}</small>
+              <button class="button" type="button" @click="adoptActivityDraft">核对后填入时间地点</button>
+            </article>
             <article v-for="check in visibleReferenceReview.checks" :key="check.code" class="permission-preview-item">
               <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
               <p>{{ check.message }}</p>

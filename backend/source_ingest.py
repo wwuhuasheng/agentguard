@@ -10,6 +10,7 @@ import csv
 import hashlib
 import io
 import re
+from datetime import datetime
 from pathlib import PurePath
 from typing import Any, Dict, Optional
 
@@ -133,12 +134,45 @@ def preview_reference_review(
             ),
         })
     proposal = _schedule_proposal(content) if summary["format"] == "csv" else None
+    activity_draft = _activity_draft(content) if summary["format"] == "txt" else None
     return {
         "mode": "PREVIEW_ONLY",
         "source_summary": summary,
         "checks": checks,
         "schedule_proposal": proposal,
+        "activity_draft": activity_draft,
         "warning": "这是提交前建议，不创建任务、不授权、不执行工具；仍需人工核对。",
+    }
+
+
+def _activity_draft(content: str) -> Optional[Dict[str, str]]:
+    """Extract only explicit bounded fields; never interpret prose as authority."""
+    fields: Dict[str, str] = {}
+    for line in content.splitlines():
+        match = re.fullmatch(r"\s*(活动时间|活动地点)\s*[：:]\s*(.*?)\s*", line)
+        if match and match.group(1) not in fields:
+            fields[match.group(1)] = match.group(2)
+    starts_at = fields.get("活动时间", "")
+    location = fields.get("活动地点", "")
+    time_pattern = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?:\+08:00|\+09:00|\+00:00)"
+    if not re.fullmatch(time_pattern, starts_at):
+        return None
+    try:
+        datetime.fromisoformat(starts_at)
+    except ValueError:
+        return None
+    location_pattern = r"[\w\u4e00-\u9fff\s·（）()—-]+"
+    if not 1 <= len(location) <= 120 or not re.fullmatch(
+        location_pattern, location
+    ):
+        return None
+    return {
+        "starts_at": starts_at,
+        "location": location,
+        "warning": (
+            "从外部 TXT 提取的待核对草案；只有用户点击采纳才会填入表单，"
+            "不构成执行授权。"
+        ),
     }
 
 

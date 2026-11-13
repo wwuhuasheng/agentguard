@@ -123,6 +123,11 @@ export interface ReferenceReviewPreview {
     slot_counts: { 上午: number; 下午: number }
     warning: string
   } | null
+  activity_draft?: {
+    starts_at: string
+    location: string
+    warning: string
+  } | null
   warning: string
 }
 export interface Task {
