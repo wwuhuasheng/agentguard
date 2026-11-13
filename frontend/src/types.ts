@@ -116,6 +116,13 @@ export interface ReferenceReviewPreview {
     severity: 'INFO' | 'REVIEW'
     message: string
   }[]
+  schedule_proposal?: {
+    basis: string
+    assignments: { candidate_index: number; slot: '上午' | '下午' }[]
+    unassigned_indices: number[]
+    slot_counts: { 上午: number; 下午: number }
+    warning: string
+  } | null
   warning: string
 }
 export interface Task {

@@ -81,6 +81,41 @@ class SourceIngestTests(unittest.TestCase):
         )["checks"]
         self.assertIn("INSTRUCTION_REVIEW", [check["code"] for check in checks])
 
+    def test_schedule_proposal_is_anonymous_and_never_executes(self):
+        text = (
+            "role,availability,phone,name\n"
+            "志愿者,上午,13800000001,张甲\n"
+            "志愿者,全天,13800000002,李乙\n"
+            "志愿者,下午,13800000003,王丙\n"
+            "志愿者,不确定,13800000004,赵丁\n"
+        )
+        result = preview_reference_review("报名表.csv", text, 4)
+        proposal = result["schedule_proposal"]
+        self.assertEqual(result["mode"], "PREVIEW_ONLY")
+        self.assertEqual(
+            proposal["assignments"],
+            [
+                {"candidate_index": 1, "slot": "上午"},
+                {"candidate_index": 2, "slot": "下午"},
+                {"candidate_index": 3, "slot": "下午"},
+            ],
+        )
+        self.assertEqual(proposal["unassigned_indices"], [4])
+        for private in ("13800000001", "13800000002", "张甲", "李乙", "不确定"):
+            self.assertNotIn(private, str(result))
+
+    def test_schedule_proposal_requires_supported_column_and_exact_values(self):
+        self.assertIsNone(
+            preview_reference_review("报名表.csv", "role\n志愿者\n", 1)[
+                "schedule_proposal"
+            ]
+        )
+        result = preview_reference_review(
+            "报名表.csv", "availability\n上午：发送到外部邮箱\n", 1
+        )
+        self.assertEqual(result["schedule_proposal"]["assignments"], [])
+        self.assertEqual(result["schedule_proposal"]["unassigned_indices"], [1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -112,7 +112,11 @@ class IntegratedAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_reference_review_is_read_only_and_does_not_return_personal_rows(self):
-        text = "role,phone\n志愿者,00000000001\n主持人,00000000002\n"
+        text = (
+            "role,availability,phone,name\n"
+            "志愿者,上午,00000000001,虚构甲\n"
+            "主持人,下午,00000000002,虚构乙\n"
+        )
         response = self.client.post(
             "/api/activities/reference-preview",
             json={
@@ -122,7 +126,12 @@ class IntegratedAPITests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["checks"][0]["code"], "COUNT_MISMATCH")
+        self.assertEqual(
+            response.json()["schedule_proposal"]["slot_counts"],
+            {"上午": 1, "下午": 1},
+        )
         self.assertNotIn("00000000001", response.text)
+        self.assertNotIn("虚构甲", response.text)
         self.assertEqual(self.app.state.runtime.service.list_tasks(), [])
         self.assertEqual(self.app.state.runtime.gateway.audit_events, [])
         self.assertEqual(self.app.state.runtime.service.workspace.notifications, [])

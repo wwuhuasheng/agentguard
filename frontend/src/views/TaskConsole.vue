@@ -406,6 +406,18 @@ function focusForm() {
               <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
               <p>{{ check.message }}</p>
             </article>
+            <article v-if="visibleReferenceReview.schedule_proposal" class="permission-preview-item" aria-label="匿名排班建议">
+              <strong>匿名排班建议 · 仅供审核</strong>
+              <p>{{ visibleReferenceReview.schedule_proposal.basis }}</p>
+              <p>上午 {{ visibleReferenceReview.schedule_proposal.slot_counts.上午 }} 人 · 下午 {{ visibleReferenceReview.schedule_proposal.slot_counts.下午 }} 人</p>
+              <p v-for="item in visibleReferenceReview.schedule_proposal.assignments" :key="item.candidate_index">
+                报名表第 {{ item.candidate_index }} 行 → {{ item.slot }}
+              </p>
+              <p v-if="visibleReferenceReview.schedule_proposal.unassigned_indices.length">
+                时段不明确，待人工安排：第 {{ visibleReferenceReview.schedule_proposal.unassigned_indices.join('、') }} 行
+              </p>
+              <small>{{ visibleReferenceReview.schedule_proposal.warning }}</small>
+            </article>
           </div>
         </template>
         <details v-if="s.mode === 'mock'" class="permission-details">

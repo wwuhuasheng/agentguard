@@ -42,7 +42,7 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 
 ## 创建任务
 
-提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role\n志愿者\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary` 和 `checks`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；接口不自动改表单、不发通知、不保存任务。改变资料或人数后应重新预览。
+提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role,availability\n志愿者,上午\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary`、`checks` 和可为空的 `schedule_proposal`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；含 `availability`、`可参与时段`、`shift` 或 `班次` 列时，仅识别标准的上午、下午、全天/均可等值，输出匿名行号与建议班次；无法识别的值留待人工安排，不返回姓名、电话或原始单元格。TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；排班只是只读草案，接口不自动改表单、不发通知、不保存任务。改变资料或人数后应重新预览。
 
 ```json
 POST /api/tasks

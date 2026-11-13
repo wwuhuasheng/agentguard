@@ -206,6 +206,13 @@ describe('rendered page interactions', () => {
           code: 'COUNT_MISMATCH', severity: 'REVIEW',
           message: '报名表有 2 行，拟通知 12 人；请核对。',
         }],
+        schedule_proposal: {
+          basis: '仅识别标准时段',
+          assignments: [{ candidate_index: 1, slot: '上午' }],
+          unassigned_indices: [2],
+          slot_counts: { 上午: 1, 下午: 0 },
+          warning: '仅供人工审核，不自动执行。',
+        },
         warning: '仅供人工核对。',
       }),
     }))
@@ -226,6 +233,8 @@ describe('rendered page interactions', () => {
     expect(url).toContain('/api/activities/reference-preview')
     expect(JSON.parse(String(request.body)).recipient_count).toBe(12)
     expect(wrapper!.get('[aria-label="资料核对建议"]').text()).toContain('报名表有 2 行')
+    expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('报名表第 1 行 → 上午')
+    expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('第 2 行')
     await wrapper!.get('#activity-count').setValue('2')
     expect(wrapper!.find('[aria-label="资料核对建议"]').exists()).toBe(false)
   })

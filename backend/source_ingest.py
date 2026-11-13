@@ -11,7 +11,7 @@ import hashlib
 import io
 import re
 from pathlib import PurePath
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 MAX_REFERENCE_BYTES = 32 * 1024
 MAX_CSV_ROWS = 500
@@ -132,11 +132,60 @@ def preview_reference_review(
                 "不会改变收件人或工具权限。"
             ),
         })
+    proposal = _schedule_proposal(content) if summary["format"] == "csv" else None
     return {
         "mode": "PREVIEW_ONLY",
         "source_summary": summary,
         "checks": checks,
+        "schedule_proposal": proposal,
         "warning": "这是提交前建议，不创建任务、不授权、不执行工具；仍需人工核对。",
+    }
+
+
+def _schedule_proposal(content: str) -> Optional[Dict[str, Any]]:
+    """Use only a controlled availability vocabulary; never return CSV values."""
+    reader = csv.DictReader(io.StringIO(content, newline=""), strict=True)
+    assert reader.fieldnames is not None  # validated by inspect_reference
+    columns = {
+        name.strip().lower().lstrip("\ufeff"): name for name in reader.fieldnames
+    }
+    column = next(
+        (
+            columns[key]
+            for key in ("availability", "可参与时段", "shift", "班次")
+            if key in columns
+        ),
+        None,
+    )
+    if column is None:
+        return None
+    counts = {"上午": 0, "下午": 0}
+    assignments = []
+    unassigned = []
+    options = {
+        "上午": {"上午"}, "morning": {"上午"},
+        "下午": {"下午"}, "afternoon": {"下午"},
+        "全天": {"上午", "下午"}, "均可": {"上午", "下午"},
+        "all-day": {"上午", "下午"}, "both": {"上午", "下午"},
+    }
+    for index, row in enumerate(reader, start=1):
+        raw = (row[column] or "").strip().lower()
+        available = options.get(raw, set())
+        if not available:
+            unassigned.append(index)
+            continue
+        slot = min(available, key=lambda value: (counts[value], value != "上午"))
+        counts[slot] += 1
+        assignments.append({"candidate_index": index, "slot": slot})
+    return {
+        "basis": "仅识别报名表中的标准可参与时段，不使用姓名、电话或其他字段",
+        "assignments": assignments,
+        "unassigned_indices": unassigned,
+        "slot_counts": counts,
+        "warning": (
+            "匿名排班草案；请核对人员意愿与实际名单后另行确认，"
+            "草案不会自动执行。"
+        ),
     }
 
 
