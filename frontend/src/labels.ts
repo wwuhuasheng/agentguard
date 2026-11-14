@@ -37,6 +37,7 @@ export const eventLabels: Record<string, string> = {
   TOOL_FAILED: '工具执行失败',
   TASK_STARTED: '任务开始分析',
   TOOL_REQUESTED: '提出工具请求',
+  SOURCE_INSPECTED: '外部资料已隔离检查',
   INCIDENT_TRIGGERED: '触发异常熔断',
   ACTION_CANCELLED: '取消后续动作',
   SNAPSHOT_RESTORED: '文件快照已恢复',

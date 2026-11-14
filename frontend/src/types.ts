@@ -58,6 +58,22 @@ export interface ActivityInput {
   location: string
   recipient: string
   recipient_count: number
+  update_shared_file: boolean
+}
+export interface ActivityPermissionPreview {
+  mode: 'PREVIEW_ONLY'
+  source_trust_assumption: TrustLevel
+  warning: string
+  steps: {
+    tool_name: string
+    action: string
+    description: string
+    scope: string
+    decision: Decision
+    risk_level: RiskLevel
+    reasons: string[]
+    reason_messages: string[]
+  }[]
 }
 export type TaskStatus =
   | 'ANALYZING'
@@ -76,6 +92,46 @@ export interface FileMeta {
   size: number
   type: string
 }
+export interface ActivityReference {
+  name: string
+  content: string
+}
+export interface SourceSummary {
+  name: string
+  format: 'txt' | 'csv'
+  source_trust: 'EXTERNAL_UNTRUSTED'
+  byte_size: number
+  sha256: string
+  flags: string[]
+  row_count?: number
+  safe_columns?: string[]
+  excluded_column_count?: number
+  sensitive_columns?: string[]
+  instruction_line_numbers?: number[]
+}
+export interface ReferenceReviewPreview {
+  mode: 'PREVIEW_ONLY'
+  source_summary: SourceSummary
+  checks: {
+    code: string
+    severity: 'INFO' | 'REVIEW'
+    message: string
+  }[]
+  schedule_proposal?: {
+    basis: string
+    assignments: { candidate_index: number; slot: '上午' | '下午' }[]
+    unassigned_indices: number[]
+    slot_counts: { 上午: number; 下午: number }
+    warning: string
+  } | null
+  activity_draft?: {
+    starts_at: string
+    location: string
+    source_lines: { starts_at: number; location: number }
+    warning: string
+  } | null
+  warning: string
+}
 export interface Task {
   task_id: string
   title: string
@@ -88,6 +144,7 @@ export interface Task {
   permissions: string[]
   events: AuditEvent[]
   replay: boolean
+  source_summary?: SourceSummary
   passport_id?: string
   agent_plan?: {
     provider: string

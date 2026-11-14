@@ -26,6 +26,8 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | GET | `/api/health` | 返回 `{ "status": "ok" }`。 |
 | GET | `/api/me` | 返回演示用户 `example.operator`。真实登录和会话鉴权后续接入。 |
 | GET | `/api/tasks` | 按创建时间倒序返回任务，每个任务带完整事件。 |
+| POST | `/api/activities/preview` | 根据本次活动参数只读预估所选工具操作的授权范围与决策，不创建任务。 |
+| POST | `/api/activities/reference-preview` | 对一份脱敏 TXT/CSV 做只读资料核对建议，不创建任务。 |
 | POST | `/api/tasks` | 创建任务并立即执行对应场景，返回 201 和 Task。 |
 | GET | `/api/tasks/{task_id}` | 返回单个 Task。 |
 | GET | `/api/tasks/{task_id}/events` | 返回 AuditEvent 数组。 |
@@ -34,7 +36,13 @@ CORS 默认允许 Vite 开发地址 `127.0.0.1:5173` 和静态演示地址 `127.
 | GET | `/api/incidents` | 返回熔断恢复事件。 |
 | GET | `/api/incidents/{incident_id}` | 返回单个 Incident。 |
 
+## 提交前权限预览
+
+请求体包含 `title`、`description` 和与 `activity` 任务相同的结构化 `activity`。`activity.update_shared_file` 为可选布尔值，默认 `true`；设为 `false` 后仅预览日历与通知两步，且实际任务护照不会包含共享文件更新。返回 `mode: PREVIEW_ONLY` 及所选操作的范围、预计的 `ALLOW / CONFIRM / BLOCK` 和规则理由。预览不会调用 AgentArts、创建任务、签发真实护照、等待审批或执行工具；提交时仍重新评估，因此预览不是最终授权。
+
 ## 创建任务
+
+提交前如已选择资料，可调用 `POST /api/activities/reference-preview`，请求体为 `{"reference":{"name":"虚构名单.csv","content":"role,availability\n志愿者,上午\n"},"recipient_count":12}`。响应为 `PREVIEW_ONLY`、`source_summary`、`checks`、可为空的 `schedule_proposal` 和 `activity_draft`。CSV 会核对数据行数与拟通知人数是否一致，并提醒敏感列；含 `availability`、`可参与时段`、`shift` 或 `班次` 列时，仅识别标准的上午、下午、全天/均可等值，输出匿名行号与建议班次；无法识别的值留待人工安排，不返回姓名、电话或原始单元格。TXT 可从独立行的 `活动时间：YYYY-MM-DDTHH:MM+08:00`（或 +09:00、+00:00）与 `活动地点：...` 提取待核对草案；只有用户在页面明确点击采纳，才填入时间和地点。TXT 不推断人数，疑似操作指令仅提示人工核对。行数可能包含重复、未报名或其他对象，**不能**当作授权人数；草案不自动发通知、不创建任务、不保存资料正文。改变资料或人数后应重新预览。
 
 ```json
 POST /api/tasks
@@ -53,7 +61,7 @@ POST /api/tasks
 - `approval`：40 人通知触发 `CONFIRM`，等待 `/decision`。
 - `block`：外部不可信请求发送敏感字段到外部邮箱，预期 `BLOCK`。
 - `recovery`：共享文件更新先确认；批准后连续失败三次，熔断并恢复快照。
-- `activity`：使用用户提交的时间、地点、通知对象和人数生成三步事务；共享文件更新须确认，超过 30 人通知还会再次确认。返回 `agent_plan` 与 `passport_id` 供前端展示。
+- `activity`：使用用户提交的时间、地点、通知对象和人数生成两/三步事务；共享文件更新可由用户取消，若保留则须确认，超过 30 人通知还会再次确认。返回 `agent_plan` 与 `passport_id` 供前端展示。
 
 Live 活动任务示例（时间必须带时区且晚于当前时间）：
 
@@ -71,7 +79,11 @@ Live 活动任务示例（时间必须带时区且晚于当前时间）：
 }
 ```
 
-`files` 与 `permissions` 是演示元数据。当前运行时不读取文件内容，也不将其提升为真实授权。
+`files` 与 `permissions` 是演示元数据；运行时不会根据 `files` 读取正文，也不会把客户端传来的 `permissions` 提升为真实授权。
+
+`activity` 任务可额外提交一个 `reference`：`{"name":"活动策划.txt","content":"演示用脱敏资料"}`。仅接受 UTF-8 TXT/CSV、1–32768 字节；CSV 最多 20 列、500 行，列宽须一致。服务端只在请求期间检查正文，不把正文或 CSV 行值保存到任务、事件或规划器输入。响应中的 `source_summary` 仅含文件名、大小、哈希、来源等级、行数、白名单字段及风险标记，并追加 `SOURCE_INSPECTED` 事件。`files` 元数据不能替代 `reference` 正文。
+
+参考资料始终标记为 `EXTERNAL_UNTRUSTED`；其中的收件地址、操作指令和授权声明不会覆盖用户填写的结构化参数。敏感列名会被标记并排除，未知列也不进入可用字段。危险指令标记是启发式提示，**不能**作为准确检出或无风险证明；目前也不会从资料中自动生成计划。文件名和列名仍可能含个人信息，演示请只用自制/脱敏资料。
 
 ## 审批决策
 
@@ -105,7 +117,7 @@ POST /api/approvals/{approval_id}/decision
 ```
 
 Task 状态包含 `EXECUTING`、`WAITING_APPROVAL`、`COMPLETED`、`BLOCKED`、`REJECTED`、`EXPIRED`、`RECOVERING`、`RECOVERED`、`FAILED`。
-`activity` 任务还包含 `agent_plan`（本地规划来源、三角色证据、步骤）和 `passport_id`。这证明的是本地离线链路，不等于已在 AgentArts 上部署。
+`activity` 任务还包含 `agent_plan`（本地规划来源、三角色证据、步骤）和 `passport_id`；提交参考资料时还包含 `source_summary`。这证明的是本地离线链路，不等于已在 AgentArts 上部署。
 
 ## AuditEvent
 
@@ -120,6 +132,6 @@ Task 状态包含 `EXECUTING`、`WAITING_APPROVAL`、`COMPLETED`、`BLOCKED`、`
 }
 ```
 
-事件类型覆盖网关的 `POLICY_DECISION`、`APPROVAL_REQUIRED`、`APPROVAL_RESOLVED`、`TOOL_EXECUTED`、`TOOL_FAILED`，以及服务层的 `APPROVAL_EXPIRED`、`INCIDENT_TRIGGERED`、`ACTION_CANCELLED`、`SNAPSHOT_RESTORED`、`RECOVERY_COMPLETED`。
+事件类型覆盖网关的 `POLICY_DECISION`、`APPROVAL_REQUIRED`、`APPROVAL_RESOLVED`、`TOOL_EXECUTED`、`TOOL_FAILED`，以及服务层的 `SOURCE_INSPECTED`、`APPROVAL_EXPIRED`、`INCIDENT_TRIGGERED`、`ACTION_CANCELLED`、`SNAPSHOT_RESTORED`、`RECOVERY_COMPLETED`。
 
 前端风险证据需要 `payload.tool_request`。服务层序列化时会把请求上下文补齐；审批相关事件还会带 `approval_id` 和 `expires_at`。

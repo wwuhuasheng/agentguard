@@ -17,6 +17,7 @@ from uuid import uuid4
 from backend.agent_core import (
     ActivitySpec,
     DeterministicAgentArtsAdapter,
+    PlanningAdapter,
     TaskCoordinator,
 )
 from backend.mcp_gateway import MCPGateway, ToolRegistry
@@ -69,9 +70,13 @@ class TaskService:
         self._last_damaged_content = ""
 
     # ------------------------------------------------------------------ setup
-    def bind_gateway(self, gateway: MCPGateway) -> None:
+    def bind_gateway(
+        self, gateway: MCPGateway, planner: Optional[PlanningAdapter] = None
+    ) -> None:
         self.gateway = gateway
-        self.coordinator = TaskCoordinator(gateway, DeterministicAgentArtsAdapter())
+        self.coordinator = TaskCoordinator(
+            gateway, planner or DeterministicAgentArtsAdapter()
+        )
 
     def register_tools(self, registry: ToolRegistry) -> None:
         """Register workspace tools; file updates route through failure logic."""
@@ -199,6 +204,7 @@ class TaskService:
         files: Optional[List[Dict[str, object]]] = None,
         permissions: Optional[List[str]] = None,
         activity: Optional[ActivitySpec] = None,
+        source_summary: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
         if scenario not in {"normal", "approval", "block", "recovery", "activity"}:
             raise ValueError(
@@ -210,6 +216,16 @@ class TaskService:
             title, description, scenario, files or [], permissions or []
         )
         self._tasks[task["task_id"]] = task
+        if source_summary is not None:
+            task["source_summary"] = source_summary
+            self._record_service_event(
+                str(task["task_id"]),
+                "SOURCE_INSPECTED",
+                {
+                    **source_summary,
+                    "summary": "已隔离检查脱敏参考资料，资料内容不构成执行授权。",
+                },
+            )
         try:
             if scenario == "activity":
                 assert activity is not None

@@ -17,8 +17,9 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 import { useConsoleStore } from '../stores/console'
+import { liveApi } from '../api/client'
 import { scenarios, permissions } from '../mock/scenarios'
-import type { Scenario, FileMeta } from '../types'
+import type { Scenario, FileMeta, ActivityPermissionPreview, ActivityInput, ActivityReference, ReferenceReviewPreview } from '../types'
 import StatusBadge from '../components/StatusBadge.vue'
 import { time } from '../labels'
 const s = useConsoleStore(),
@@ -31,11 +32,40 @@ const s = useConsoleStore(),
   location = ref('社区服务中心'),
   recipient = ref('participants@example.org'),
   recipientCount = ref(12),
+  updateSharedFile = ref(true),
   files = ref<FileMeta[]>([]),
+  reference = ref<ActivityReference | null>(null),
   input = ref<HTMLInputElement>(),
   form = ref<HTMLElement>(),
   query = ref(''),
   filter = ref('all')
+const permissionPreview = ref<ActivityPermissionPreview | null>(null)
+const permissionPreviewKey = ref('')
+const previewBusy = ref(false)
+const referenceReview = ref<ReferenceReviewPreview | null>(null)
+const referenceReviewKey = ref('')
+const referenceBusy = ref(false)
+const currentReferenceKey = computed(() =>
+  JSON.stringify([reference.value?.name, reference.value?.content, recipientCount.value])
+)
+const visibleReferenceReview = computed(() =>
+  referenceReviewKey.value === currentReferenceKey.value ? referenceReview.value : null
+)
+const currentPreviewKey = computed(() =>
+  JSON.stringify([
+    title.value.trim(),
+    description.value.trim(),
+    startsAt.value,
+    timezoneOffset.value,
+    location.value.trim(),
+    recipient.value.trim(),
+    recipientCount.value,
+    updateSharedFile.value,
+  ])
+)
+const visiblePreview = computed(() =>
+  permissionPreviewKey.value === currentPreviewKey.value ? permissionPreview.value : null
+)
 const rows = computed(() =>
   s.tasks.filter(
     (t) =>
@@ -86,14 +116,104 @@ async function submit() {
           location: location.value.trim(),
           recipient: recipient.value.trim(),
           recipient_count: Number(recipientCount.value),
+          update_shared_file: updateSharedFile.value,
         }
-      : undefined
+      : undefined,
+    reference.value || undefined
   )
   if (t) void router.push('/trace')
 }
-function addFiles(e: Event) {
+async function previewPermissions() {
+  if (!title.value.trim() || !description.value.trim() || !startsAt.value ||
+      !location.value.trim() || !recipient.value.trim()) {
+    s.notify('请先填齐活动参数，再预览权限。')
+    return
+  }
+  const startsAtWithZone = `${startsAt.value}:00${timezoneOffset.value}`
+  const start = new Date(startsAtWithZone)
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
+    s.notify('活动时间必须晚于当前时间。')
+    return
+  }
+  const activity: ActivityInput = {
+    starts_at: startsAtWithZone,
+    location: location.value.trim(),
+    recipient: recipient.value.trim(),
+    recipient_count: Number(recipientCount.value),
+    update_shared_file: updateSharedFile.value,
+  }
+  const key = currentPreviewKey.value
+  previewBusy.value = true
+  try {
+    const result = await liveApi.previewActivity({
+      title: title.value.trim(),
+      description: description.value.trim(),
+      activity,
+    })
+    if (key === currentPreviewKey.value) {
+      permissionPreview.value = result
+      permissionPreviewKey.value = key
+    }
+  } catch (error) {
+    s.notify(`权限预览失败：${error instanceof Error ? error.message : '网络异常'}`)
+  } finally {
+    previewBusy.value = false
+  }
+}
+async function previewReference() {
+  if (!reference.value) return s.notify('请先选择一份脱敏 TXT/CSV 资料。')
+  const count = Number(recipientCount.value)
+  if (!Number.isInteger(count) || count < 1 || count > 1000)
+    return s.notify('请填写 1–1000 的接收人数。')
+  const key = currentReferenceKey.value
+  referenceBusy.value = true
+  try {
+    const result = await liveApi.previewReference({
+      reference: reference.value,
+      recipient_count: count,
+    })
+    if (key === currentReferenceKey.value) {
+      referenceReview.value = result
+      referenceReviewKey.value = key
+    }
+  } catch (error) {
+    s.notify(`资料核对失败：${error instanceof Error ? error.message : '网络异常'}`)
+  } finally {
+    referenceBusy.value = false
+  }
+}
+function adoptActivityDraft() {
+  const draft = visibleReferenceReview.value?.activity_draft
+  if (!draft) return
+  const match = draft.starts_at.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(\+08:00|\+09:00|\+00:00)$/)
+  if (!match) return
+  startsAt.value = match[1]!
+  timezoneOffset.value = match[2]!
+  location.value = draft.location
+  s.notify('已填入时间和地点；请核对后再预览权限并提交。')
+}
+async function addFiles(e: Event) {
   const list = (e.target as HTMLInputElement).files
   if (!list) return
+  if (s.mode === 'live') {
+    const file = list[0]
+    if (file) {
+      reference.value = null
+      files.value = []
+      try {
+        if (!/\.(txt|csv)$/i.test(file.name)) throw new Error('Live 模式仅支持 TXT/CSV。')
+        if (file.size < 1 || file.size > 32 * 1024)
+          throw new Error('资料须为 1–32 KB 的脱敏文本。')
+        const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
+        reference.value = { name: file.name, content }
+        files.value = [{ name: file.name, size: file.size, type: file.type }]
+      } catch (error) {
+        s.notify(error instanceof Error ? error.message : '读取资料失败')
+      }
+    }
+    ;(e.target as HTMLInputElement).value = ''
+    return
+  }
   for (const f of list) {
     if (f.size > 10 * 1024 * 1024) {
       s.notify('单个附件不能超过 10 MB')
@@ -107,6 +227,10 @@ function addFiles(e: Event) {
       files.value.push({ name: f.name, size: f.size, type: f.type })
   }
   ;(e.target as HTMLInputElement).value = ''
+}
+function removeFile(index: number) {
+  files.value.splice(index, 1)
+  if (s.mode === 'live') reference.value = null
 }
 function openTask(id: string) {
   s.select(id)
@@ -217,7 +341,23 @@ function focusForm() {
               <input id="activity-count" v-model.number="recipientCount" type="number" min="1" max="1000" required />
             </div>
           </div>
+          <label class="activity-action-choice" for="update-shared-file">
+            <input id="update-shared-file" v-model="updateSharedFile" type="checkbox" />
+            <span>同时更新共享活动文件</span>
+          </label>
+          <p class="helper">取消后，本次任务不申请文件更新权限；Agent 后续追加该操作会被阻断。日历和通知仍按当前参数执行。</p>
           <p class="helper">当前演示策略仅允许 example.org 域名；超过 30 人发送通知需二次审批。这里使用内存模拟工具，不会真实发送邮件。</p>
+          <button class="button" type="button" :disabled="previewBusy" @click="previewPermissions">
+            <ShieldCheck :size="16" />{{ previewBusy ? '正在预览…' : '预览本次权限与风险' }}
+          </button>
+          <div v-if="visiblePreview" class="permission-preview" aria-label="本次权限预览">
+            <p class="helper">{{ visiblePreview.warning }}</p>
+            <article v-for="step in visiblePreview.steps" :key="step.tool_name" class="permission-preview-item">
+              <div class="row between"><strong>{{ step.description }}</strong><StatusBadge :value="step.decision" /></div>
+              <small>{{ step.scope }}</small>
+              <p>{{ step.reason_messages.join('；') }}</p>
+            </article>
+          </div>
         </template><template v-else
           ><div class="row between field-label">
             <span>演示场景</span><span class="muted small">由预置事件驱动</span>
@@ -236,21 +376,20 @@ function focusForm() {
               ><small>{{ x.subtitle }}</small>
             </button>
           </div></template
-        ><label class="upload-box" :class="{ disabled: s.mode === 'live' }"
+        ><label class="upload-box"
           ><Upload :size="21" /><span
-            ><strong>选择活动资料</strong><small>PDF / CSV / TXT · 每个不超过 10 MB</small></span
+            ><strong>选择活动资料</strong><small>{{ s.mode === 'live' ? '脱敏 TXT / CSV · 最多 32 KB' : 'PDF / CSV / TXT · 每个不超过 10 MB' }}</small></span
           ><Plus :size="17" /><input
             type="file"
-            multiple
-            accept=".pdf,.csv,.txt,.md,.xlsx"
-            :disabled="s.mode === 'live'"
+            :multiple="s.mode === 'mock'"
+            :accept="s.mode === 'live' ? '.txt,.csv' : '.pdf,.csv,.txt,.md,.xlsx'"
             @change="addFiles"
         /></label>
         <p class="helper">
           {{
             s.mode === 'mock'
               ? '附件仅记录文件名和大小；本演示使用预置资料，不读取附件内容。'
-              : '文件上传接口尚未确认，真实模式暂不接收附件。'
+              : '仅使用自制或已脱敏资料；后端只保留摘要和风险标记，不保存正文，也不向 AgentArts 发送正文。'
           }}
         </p>
         <div v-if="files.length" class="file-list">
@@ -261,19 +400,54 @@ function focusForm() {
               type="button"
               class="icon-button"
               :aria-label="'移除 ' + f.name"
-              @click="files.splice(i, 1)"
+              @click="removeFile(i)"
             >
               <X :size="14" />
             </button>
           </div>
         </div>
-        <details class="permission-details">
+        <template v-if="s.mode === 'live' && reference">
+          <button class="button" type="button" :disabled="referenceBusy" @click="previewReference">
+            <FileText :size="16" />{{ referenceBusy ? '正在核对…' : '核对资料与通知人数' }}
+          </button>
+          <div v-if="visibleReferenceReview" class="permission-preview" aria-label="资料核对建议">
+            <p class="helper">{{ visibleReferenceReview.warning }}</p>
+            <article v-if="visibleReferenceReview.activity_draft" class="permission-preview-item" aria-label="活动信息草案">
+              <strong>从策划 TXT 提取的活动信息 · 待核对</strong>
+              <p>时间：{{ visibleReferenceReview.activity_draft.starts_at }}（资料第 {{ visibleReferenceReview.activity_draft.source_lines.starts_at }} 行）</p>
+              <p>地点：{{ visibleReferenceReview.activity_draft.location }}（资料第 {{ visibleReferenceReview.activity_draft.source_lines.location }} 行）</p>
+              <small>{{ visibleReferenceReview.activity_draft.warning }}</small>
+              <button class="button" type="button" @click="adoptActivityDraft">核对后填入时间地点</button>
+            </article>
+            <article v-for="check in visibleReferenceReview.checks" :key="check.code" class="permission-preview-item">
+              <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
+              <p>{{ check.message }}</p>
+              <small v-if="check.code === 'INSTRUCTION_REVIEW' && visibleReferenceReview.source_summary.instruction_line_numbers?.length">
+                疑似指令位于资料第 {{ visibleReferenceReview.source_summary.instruction_line_numbers.join('、') }} 行；原文不会进入任务状态。
+              </small>
+            </article>
+            <article v-if="visibleReferenceReview.schedule_proposal" class="permission-preview-item" aria-label="匿名排班建议">
+              <strong>匿名排班建议 · 仅供审核</strong>
+              <p>{{ visibleReferenceReview.schedule_proposal.basis }}</p>
+              <p>上午 {{ visibleReferenceReview.schedule_proposal.slot_counts.上午 }} 人 · 下午 {{ visibleReferenceReview.schedule_proposal.slot_counts.下午 }} 人</p>
+              <p v-for="item in visibleReferenceReview.schedule_proposal.assignments" :key="item.candidate_index">
+                报名表第 {{ item.candidate_index }} 行 → {{ item.slot }}
+              </p>
+              <p v-if="visibleReferenceReview.schedule_proposal.unassigned_indices.length">
+                时段不明确，待人工安排：第 {{ visibleReferenceReview.schedule_proposal.unassigned_indices.join('、') }} 行
+              </p>
+              <small>{{ visibleReferenceReview.schedule_proposal.warning }}</small>
+            </article>
+          </div>
+        </template>
+        <details v-if="s.mode === 'mock'" class="permission-details">
           <summary><ShieldCheck :size="14" />本次演示的授权范围<ChevronRight :size="14" /></summary>
           <ul>
             <li v-for="p in permissions" :key="p">{{ p }}</li>
             <li>禁止删除原文件，禁止外发敏感字段</li>
           </ul>
         </details>
+        <p v-else class="helper">Live 模式的执行参数只来自上方填写的活动信息；TXT/CSV 只作为外部参考资料检查，不会改变收件人或工具权限。</p>
         <div class="form-bottom">
           <span><ShieldCheck :size="14" />所有工具请求均经过策略检查</span
           ><button class="button primary" type="submit" :disabled="s.busy">

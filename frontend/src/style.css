@@ -713,6 +713,22 @@ main {
 .task-form textarea {
   width: 100%;
 }
+.task-form .activity-action-choice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 17px 0 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-form .activity-action-choice input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  accent-color: #202020;
+}
 .activity-input-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -842,6 +858,31 @@ main {
 }
 .permission-details {
   margin-top: 15px;
+}
+.permission-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.permission-preview-item {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fafafa;
+}
+.permission-preview-item strong {
+  font-size: 11px;
+}
+.permission-preview-item small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.permission-preview-item p {
+  margin-top: 5px;
+  color: #666;
+  font-size: 10px;
 }
 .permission-details summary {
   display: flex;

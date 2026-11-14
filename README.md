@@ -34,7 +34,7 @@ VITE_DATA_MODE=live
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-`backend.api.server:app` 是统一启动入口：控制台接口位于 `/api/*`，原有核心事务接口位于 `/core/api/*`，两者在同一进程共享策略网关。独立运行 `backend.api.app:app` 仅用于核心接口开发和测试。真实 AgentArts 云端工作流尚未接入。接入说明见 [docs/agentarts-integration.md](docs/agentarts-integration.md)，前端演示见 [docs/DEMO.md](docs/DEMO.md)。
+`backend.api.server:app` 是统一启动入口：控制台接口位于 `/api/*`，原有核心事务接口位于 `/core/api/*`，两者在同一进程共享策略网关。独立运行 `backend.api.app:app` 仅用于核心接口开发和测试。已提供 AgentArts 工作流调用桥接代码，**尚未使用真实账号完成云端验证**；默认仍使用本地规划器。接入步骤见 [docs/agentarts-integration.md](docs/agentarts-integration.md)，前端演示见 [docs/DEMO.md](docs/DEMO.md)。
 
 ## 核心能力
 
@@ -43,8 +43,12 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - 审批摘要绑定，避免批准后偷偷换参数；
 - 统一审计事件、模拟工具、失败恢复与熔断；
 - Vue 3 可交互演示控制台；
-- Live 模式按用户填写的活动参数生成三步事务与任务护照，支持连续审批及可追踪的执行结果；
-- AgentArts 可接入的 Streamable HTTP MCP Server 与 ARM64 部署配置。
+- Live 模式可在提交前按本次任务参数预览最小工具范围和预计三态决策，修改参数后旧预览失效；
+- Live 模式可检查一份脱敏 TXT/CSV 参考资料，记录来源与风险摘要，隔离正文和敏感行值；外部资料不能改变用户授权；
+- 提交前可核对 CSV 行数与拟通知人数，并从标准可参与时段生成匿名排班草案；建议只读，不使用姓名电话，不自动扩权或改动任务参数；
+- 可从格式明确的脱敏 TXT 策划资料提取活动时间和地点草案，经用户点击核对采纳后才填入表单；通知对象与权限仍由用户指定；
+- Live 模式按用户填写的活动参数生成两/三步事务与任务护照；可取消共享文件更新权限，并支持连续审批及可追踪的执行结果；
+- AgentArts 可接入的只读 Streamable HTTP MCP Server（策略预览、运行状态）与 ARM64 部署配置；智能体不能通过 MCP 自行批准或执行工具。
 
 主链路命令行演示可用 `python3 scripts/run_task_demo.py`；`scripts/run_demo.py` 仅用于单独观察底层策略规则。
 
@@ -56,10 +60,11 @@ config/              # 策略配置
 deploy/mcp_server/   # MCP Server 和部署配置
 docs/                # 架构、接口与演示说明
 evaluation/          # 评测工作区
+examples/            # 虚构、脱敏的演示参考资料
 frontend/            # Vue 3 控制台
 tests/               # 自动化测试
 ```
 
 ## 安全边界
 
-演示 API 仅在进程内保存状态，没有真实登录、持久化存储或多租户隔离。不连接真实学校系统、邮箱、支付账户或个人通讯录；接入真实系统前须完成身份认证、凭据管理、授权校验和安全评测。
+演示 API 仅在进程内保存状态，没有真实登录、持久化存储或多租户隔离，**不可直接作为公网可写服务部署**。公开给 AgentArts 的 MCP 入口只有只读预览和健康检查；人类审批只在演示后端处理。不连接真实学校系统、邮箱、支付账户或个人通讯录；接入真实系统前须完成身份认证、凭据管理、授权校验和安全评测。

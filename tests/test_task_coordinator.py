@@ -103,6 +103,36 @@ class TaskCoordinatorTests(unittest.TestCase):
             "TASK_PASSPORT_VIOLATION",
         )
 
+    def test_user_can_exclude_file_update_and_passport_blocks_adding_it_back(self):
+        spec = self._spec()
+        spec = ActivitySpec(**{**spec.__dict__, "update_shared_file": False})
+        original_files = dict(self.workspace.files)
+        task = self.coordinator.create_activity(spec)
+        self.assertEqual(task.status, TaskStatus.SUCCEEDED)
+        self.assertEqual(task.total_steps, 2)
+        self.assertEqual(
+            [step["tool_name"] for step in task.plan_summary["steps"]],
+            ["calendar", "send_notice"],
+        )
+        self.assertEqual(self.workspace.files, original_files)
+        self.assertEqual(len(self.workspace.notifications), 1)
+        unauthorized = ToolRequest(
+            task_id=task.task_id,
+            agent_id="activity-assistant",
+            tool_name="shared_file",
+            action="update",
+            arguments={"path": "/workspace/activities/plan.md", "content": "越权"},
+            source_trust=TrustLevel.USER_CONFIRMED,
+            passport_id=task.plan_summary["task_passport"]["passport_id"],
+        )
+        result = self.gateway.submit(unauthorized)
+        self.assertEqual(result.status, "BLOCKED")
+        self.assertEqual(
+            self.gateway.audit_events[-1].payload["reasons"][0]["code"],
+            "TASK_PASSPORT_VIOLATION",
+        )
+        self.assertEqual(self.workspace.files, original_files)
+
 
 if __name__ == "__main__":
     unittest.main()
