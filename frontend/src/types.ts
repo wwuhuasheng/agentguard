@@ -107,6 +107,7 @@ export interface SourceSummary {
   safe_columns?: string[]
   excluded_column_count?: number
   sensitive_columns?: string[]
+  instruction_line_numbers?: number[]
 }
 export interface ReferenceReviewPreview {
   mode: 'PREVIEW_ONLY'
@@ -126,6 +127,7 @@ export interface ReferenceReviewPreview {
   activity_draft?: {
     starts_at: string
     location: string
+    source_lines: { starts_at: number; location: number }
     warning: string
   } | null
   warning: string

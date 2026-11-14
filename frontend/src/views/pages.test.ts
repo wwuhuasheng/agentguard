@@ -246,6 +246,7 @@ describe('rendered page interactions', () => {
         schedule_proposal: null,
         activity_draft: {
           starts_at: '2026-12-20T09:00+08:00', location: '社区服务中心',
+          source_lines: { starts_at: 1, location: 2 },
           warning: '仅供核对。',
         },
         warning: '仅供核对。',
@@ -264,6 +265,7 @@ describe('rendered page interactions', () => {
     await flushPromises()
     expect((wrapper!.get('#activity-time').element as HTMLInputElement).value).toBe('')
     expect(wrapper!.get('[aria-label="活动信息草案"]').text()).toContain('社区服务中心')
+    expect(wrapper!.get('[aria-label="活动信息草案"]').text()).toContain('资料第 1 行')
     await wrapper!.findAll('button').find((b) => b.text().includes('核对后填入时间地点'))!.trigger('click')
     expect((wrapper!.get('#activity-time').element as HTMLInputElement).value).toBe('2026-12-20T09:00')
     expect((wrapper!.get('#activity-location').element as HTMLInputElement).value).toBe('社区服务中心')

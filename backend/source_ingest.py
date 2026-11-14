@@ -60,8 +60,14 @@ def inspect_reference(name: str, content: str) -> Dict[str, Any]:
     }
     if suffix == ".csv":
         result.update(_inspect_csv(content, flags))
-    if any(pattern.search(content) for pattern in _INSTRUCTION_PATTERNS):
+    instruction_lines = [
+        index
+        for index, line in enumerate(content.splitlines(), start=1)
+        if any(pattern.search(line) for pattern in _INSTRUCTION_PATTERNS)
+    ]
+    if instruction_lines:
         flags.append("POSSIBLE_INSTRUCTION_IN_REFERENCE")
+        result["instruction_line_numbers"] = instruction_lines
     return result
 
 
@@ -145,13 +151,15 @@ def preview_reference_review(
     }
 
 
-def _activity_draft(content: str) -> Optional[Dict[str, str]]:
+def _activity_draft(content: str) -> Optional[Dict[str, Any]]:
     """Extract only explicit bounded fields; never interpret prose as authority."""
     fields: Dict[str, str] = {}
-    for line in content.splitlines():
+    field_lines: Dict[str, int] = {}
+    for line_number, line in enumerate(content.splitlines(), start=1):
         match = re.fullmatch(r"\s*(活动时间|活动地点)\s*[：:]\s*(.*?)\s*", line)
         if match and match.group(1) not in fields:
             fields[match.group(1)] = match.group(2)
+            field_lines[match.group(1)] = line_number
     starts_at = fields.get("活动时间", "")
     location = fields.get("活动地点", "")
     time_pattern = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?:\+08:00|\+09:00|\+00:00)"
@@ -169,6 +177,10 @@ def _activity_draft(content: str) -> Optional[Dict[str, str]]:
     return {
         "starts_at": starts_at,
         "location": location,
+        "source_lines": {
+            "starts_at": field_lines["活动时间"],
+            "location": field_lines["活动地点"],
+        },
         "warning": (
             "从外部 TXT 提取的待核对草案；只有用户点击采纳才会填入表单，"
             "不构成执行授权。"

@@ -414,14 +414,17 @@ function focusForm() {
             <p class="helper">{{ visibleReferenceReview.warning }}</p>
             <article v-if="visibleReferenceReview.activity_draft" class="permission-preview-item" aria-label="活动信息草案">
               <strong>从策划 TXT 提取的活动信息 · 待核对</strong>
-              <p>时间：{{ visibleReferenceReview.activity_draft.starts_at }}</p>
-              <p>地点：{{ visibleReferenceReview.activity_draft.location }}</p>
+              <p>时间：{{ visibleReferenceReview.activity_draft.starts_at }}（资料第 {{ visibleReferenceReview.activity_draft.source_lines.starts_at }} 行）</p>
+              <p>地点：{{ visibleReferenceReview.activity_draft.location }}（资料第 {{ visibleReferenceReview.activity_draft.source_lines.location }} 行）</p>
               <small>{{ visibleReferenceReview.activity_draft.warning }}</small>
               <button class="button" type="button" @click="adoptActivityDraft">核对后填入时间地点</button>
             </article>
             <article v-for="check in visibleReferenceReview.checks" :key="check.code" class="permission-preview-item">
               <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
               <p>{{ check.message }}</p>
+              <small v-if="check.code === 'INSTRUCTION_REVIEW' && visibleReferenceReview.source_summary.instruction_line_numbers?.length">
+                疑似指令位于资料第 {{ visibleReferenceReview.source_summary.instruction_line_numbers.join('、') }} 行；原文不会进入任务状态。
+              </small>
             </article>
             <article v-if="visibleReferenceReview.schedule_proposal" class="permission-preview-item" aria-label="匿名排班建议">
               <strong>匿名排班建议 · 仅供审核</strong>

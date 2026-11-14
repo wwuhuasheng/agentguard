@@ -13,6 +13,7 @@ class SourceIngestTests(unittest.TestCase):
         result = inspect_reference("活动策划.txt", text)
         self.assertEqual(result["source_trust"], "EXTERNAL_UNTRUSTED")
         self.assertIn("POSSIBLE_INSTRUCTION_IN_REFERENCE", result["flags"])
+        self.assertEqual(result["instruction_line_numbers"], [1])
         self.assertNotIn(text, str(result))
         self.assertEqual(len(result["sha256"]), 64)
 
@@ -128,6 +129,11 @@ class SourceIngestTests(unittest.TestCase):
             result["activity_draft"]["starts_at"], "2026-12-20T09:00+08:00"
         )
         self.assertEqual(result["activity_draft"]["location"], "社区服务中心")
+        self.assertEqual(
+            result["activity_draft"]["source_lines"],
+            {"starts_at": 2, "location": 3},
+        )
+        self.assertEqual(result["source_summary"]["instruction_line_numbers"], [4])
         self.assertIn("INSTRUCTION_REVIEW", [x["code"] for x in result["checks"]])
         self.assertNotIn("完整名单", str(result))
 
