@@ -32,17 +32,22 @@ class DeterministicAgentArtsAdapter:
                 },
                 source_trust=spec.source_trust,
             ),
-            ToolRequest(
-                task_id=task_id,
-                agent_id="activity-assistant",
-                tool_name="shared_file",
-                action="update",
-                arguments={
-                    "path": "/workspace/activities/plan.md",
-                    "content": self._build_plan_document(spec),
-                },
-                source_trust=spec.source_trust,
-            ),
+        ]
+        if spec.update_shared_file:
+            steps.append(
+                ToolRequest(
+                    task_id=task_id,
+                    agent_id="activity-assistant",
+                    tool_name="shared_file",
+                    action="update",
+                    arguments={
+                        "path": "/workspace/activities/plan.md",
+                        "content": self._build_plan_document(spec),
+                    },
+                    source_trust=spec.source_trust,
+                )
+            )
+        steps.append(
             ToolRequest(
                 task_id=task_id,
                 agent_id="activity-assistant",
@@ -54,23 +59,31 @@ class DeterministicAgentArtsAdapter:
                     "content": spec.notice_content,
                 },
                 source_trust=spec.source_trust,
-            ),
+            )
+        )
+        high_impact_steps = [
+            f"{step.tool_name}.{step.action}"
+            for step in steps
+            if step.tool_name in {"shared_file", "send_notice"}
         ]
         evidence = [
             AgentEvidence(
                 AgentRole.BUSINESS,
-                "已将活动目标拆解为日历、计划文档和通知三个事务步骤。",
+                "已按用户选择拆解活动事务，仅规划授权范围内的操作。",
                 {"required_tools": [item.tool_name for item in steps]},
             ),
             AgentEvidence(
                 AgentRole.CONTENT_ISOLATION,
                 "输入来源已分级，外部内容不会继承用户授权。",
-                {"source_trust": spec.source_trust.value},
+                {
+                    "source_trust": spec.source_trust.value,
+                    "reference_signals": spec.reference_signals or {"present": False},
+                },
             ),
             AgentEvidence(
                 AgentRole.BEHAVIOR_GUARD,
-                "识别到文件更新与对外通知，交由确定性策略引擎裁决。",
-                {"high_impact_steps": ["shared_file.update", "send_notice.send"]},
+                "高影响操作交由确定性策略引擎裁决。",
+                {"high_impact_steps": high_impact_steps},
             ),
         ]
         return OrchestrationPlan(task_id, steps, evidence, self.provider)

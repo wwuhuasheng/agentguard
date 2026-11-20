@@ -16,6 +16,7 @@
 
 当前事件类型：
 
+- `SOURCE_INSPECTED`（活动参考资料的隔离检查摘要；不含正文或 CSV 行值）
 - `POLICY_DECISION`
 - `APPROVAL_REQUIRED`
 - `APPROVAL_RESOLVED`

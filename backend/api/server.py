@@ -15,14 +15,21 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from backend.agent_core import ActivitySpec
+from backend.agent_core.agentarts_cloud import AgentArtsError, planner_from_env
+from backend.agent_core.permission_preview import preview_activity_permissions
 from backend.api.app import create_app as create_core_app
 from backend.mcp_gateway import MCPGateway, ToolRegistry
 from backend.policy_engine import PolicyEngine, PolicyRepository
 from backend.recovery import RecoveryController
 from backend.services import DEMO_USER, TaskService
+from backend.source_ingest import (
+    inspect_reference,
+    preview_reference_review,
+    safe_reference_signals,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _POLICIES = _ROOT / "config" / "policies.json"
@@ -40,6 +47,12 @@ class ActivityInput(BaseModel):
     location: str = Field(min_length=1, max_length=120)
     recipient: str = Field(min_length=3, max_length=254)
     recipient_count: int = Field(ge=1, le=1000)
+    update_shared_file: StrictBool = True
+
+
+class ReferenceInput(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=32768)
 
 
 class TaskCreate(BaseModel):
@@ -49,6 +62,18 @@ class TaskCreate(BaseModel):
     files: list[Dict[str, Any]] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
     activity: Optional[ActivityInput] = None
+    reference: Optional[ReferenceInput] = None
+
+
+class ActivityPreviewInput(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=2000)
+    activity: ActivityInput
+
+
+class ReferencePreviewInput(BaseModel):
+    reference: ReferenceInput
+    recipient_count: int = Field(ge=1, le=1000)
 
 
 class ApprovalDecision(BaseModel):
@@ -72,7 +97,7 @@ class TaskServiceRuntime:
             recovery=RecoveryController(self.service.workspace),
             approval_ttl_seconds=60,
         )
-        self.service.bind_gateway(self.gateway)
+        self.service.bind_gateway(self.gateway, planner_from_env())
 
 
 def create_app() -> FastAPI:
@@ -107,34 +132,64 @@ def create_app() -> FastAPI:
     def tasks() -> list[Dict[str, Any]]:
         return service.list_tasks()
 
+    @app.post("/api/activities/preview")
+    def preview_activity(payload: ActivityPreviewInput) -> Dict[str, Any]:
+        activity = payload.activity
+        _validate_activity_input(activity)
+        try:
+            return preview_activity_permissions(
+                runtime.gateway.engine.repository,
+                ActivitySpec(
+                    title=payload.title,
+                    starts_at=activity.starts_at.isoformat(),
+                    location=activity.location,
+                    recipient=activity.recipient,
+                    recipient_count=activity.recipient_count,
+                    notice_content=payload.description,
+                    update_shared_file=activity.update_shared_file,
+                ),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/api/activities/reference-preview")
+    def preview_reference(payload: ReferencePreviewInput) -> Dict[str, Any]:
+        try:
+            return preview_reference_review(
+                payload.reference.name,
+                payload.reference.content,
+                payload.recipient_count,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.post("/api/tasks", status_code=201)
     def create_task(payload: TaskCreate) -> Dict[str, Any]:
+        if payload.reference is not None and payload.scenario != "activity":
+            raise HTTPException(
+                status_code=422,
+                detail="references are supported only for activity tasks",
+            )
         if payload.scenario == "activity":
             if not payload.description.strip():
                 raise HTTPException(
                     status_code=422, detail="notice content is required"
                 )
             if payload.activity is not None:
-                starts_at = payload.activity.starts_at
-                if starts_at.tzinfo is None or starts_at.utcoffset() is None:
-                    raise HTTPException(status_code=422, detail="timezone is required")
-                if starts_at <= datetime.now(timezone.utc):
-                    raise HTTPException(
-                        status_code=422, detail="activity time must be in the future"
-                    )
-                if not fullmatch(
-                    r"[^@\s]+@[^@\s]+\.[^@\s]+", payload.activity.recipient
-                ):
-                    raise HTTPException(
-                        status_code=422, detail="valid recipient email is required"
-                    )
+                _validate_activity_input(payload.activity)
         try:
+            source_summary = (
+                inspect_reference(payload.reference.name, payload.reference.content)
+                if payload.reference is not None
+                else None
+            )
             return service.create_task(
                 title=payload.title,
                 description=payload.description,
                 scenario=payload.scenario,
                 files=payload.files,
                 permissions=payload.permissions,
+                source_summary=source_summary,
                 activity=(
                     ActivitySpec(
                         title=payload.title,
@@ -143,11 +198,19 @@ def create_app() -> FastAPI:
                         recipient=payload.activity.recipient,
                         recipient_count=payload.activity.recipient_count,
                         notice_content=payload.description,
+                        update_shared_file=payload.activity.update_shared_file,
+                        reference_signals=(
+                            safe_reference_signals(source_summary)
+                            if source_summary is not None
+                            else None
+                        ),
                     )
                     if payload.activity is not None
                     else None
                 ),
             )
+        except AgentArtsError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -199,6 +262,18 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="incident not found") from None
 
     return app
+
+
+def _validate_activity_input(activity: ActivityInput) -> None:
+    starts_at = activity.starts_at
+    if starts_at.tzinfo is None or starts_at.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="timezone is required")
+    if starts_at <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422, detail="activity time must be in the future"
+        )
+    if not fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", activity.recipient):
+        raise HTTPException(status_code=422, detail="valid recipient email is required")
 
 
 app = create_app()

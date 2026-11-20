@@ -7,6 +7,7 @@ from backend.agent_core import (
     DeterministicAgentArtsAdapter,
     TaskCoordinator,
 )
+from backend.agent_core.permission_preview import preview_activity_permissions
 from backend.bootstrap import build_runtime
 from backend.models import ToolRequest, TrustLevel
 
@@ -19,6 +20,35 @@ class AgentGuardMCPService:
         self.coordinator = TaskCoordinator(
             self.gateway, DeterministicAgentArtsAdapter()
         )
+
+    def preview_activity(
+        self,
+        title: str,
+        starts_at: str,
+        location: str,
+        recipient: str,
+        recipient_count: int,
+        notice_content: str,
+        source_trust: str = "MODEL_GENERATED",
+        update_shared_file: bool = True,
+    ) -> Dict[str, Any]:
+        """Assess a hypothetical plan without touching live tasks or tools.
+
+        The caller-supplied trust label is a preview assumption, never a grant of
+        authority. A fresh policy engine and passport registry isolate the
+        one-use evaluation from the live execution gateway.
+        """
+        spec = ActivitySpec(
+            title=title,
+            starts_at=starts_at,
+            location=location,
+            recipient=recipient,
+            recipient_count=recipient_count,
+            notice_content=notice_content,
+            source_trust=self._trust_level(source_trust),
+            update_shared_file=update_shared_file,
+        )
+        return preview_activity_permissions(self.gateway.engine.repository, spec)
 
     def create_secure_activity(
         self,
@@ -94,12 +124,7 @@ class AgentGuardMCPService:
             "transport": "streamable-http",
             "policy_mode": "deterministic",
             "registered_tools": [
-                "create_secure_activity",
-                "resolve_activity_approval",
-                "cancel_activity_task",
-                "get_activity_task",
-                "get_task_trace",
-                "submit_guarded_tool_request",
+                "preview_activity",
                 "runtime_status",
             ],
             "circuits": self.gateway.recovery.breaker.states()
