@@ -87,7 +87,8 @@ class MCPServiceTests(unittest.TestCase):
         status = self.service.runtime_status()
         self.assertEqual(status["transport"], "streamable-http")
         self.assertEqual(
-            status["registered_tools"], ["preview_activity", "runtime_status"]
+            status["registered_tools"],
+            ["preview_activity", "explain_policy", "runtime_status"],
         )
 
     def test_mcp_registration_has_no_approval_or_execution_tool(self):
@@ -103,7 +104,21 @@ class MCPServiceTests(unittest.TestCase):
                 for decorator in node.decorator_list
             )
         ]
-        self.assertEqual(exposed, ["preview_activity", "runtime_status"])
+        self.assertEqual(
+            exposed, ["preview_activity", "explain_policy", "runtime_status"]
+        )
+
+    def test_policy_guidance_is_read_only_and_cites_versioned_rules(self):
+        before = self.service.workspace.snapshot()
+        guide = self.service.explain_policy("RECIPIENT_DOMAIN_DENIED")
+        self.assertEqual(guide["mode"], "READ_ONLY_GUIDANCE")
+        self.assertIn("allowed_recipient_domains", guide["rule_ref"])
+        self.assertIn("核对接收地址", guide["next_step"])
+        self.assertEqual(len(guide["policy_sha256"]), 64)
+        self.assertEqual(self.service.workspace.snapshot(), before)
+        self.assertEqual(self.service.gateway.audit_events, [])
+        with self.assertRaisesRegex(ValueError, "unknown policy reason code"):
+            self.service.explain_policy("GRANT_ALL_TOOLS")
 
     def test_agent_preview_is_read_only_and_never_grants_approval(self):
         before = self.service.workspace.snapshot()
@@ -120,6 +135,10 @@ class MCPServiceTests(unittest.TestCase):
         self.assertEqual(
             [step["decision"] for step in preview["steps"]],
             ["ALLOW", "CONFIRM", "CONFIRM"],
+        )
+        self.assertEqual(
+            preview["steps"][1]["guidance"][0]["reason_code"],
+            "ACTION_REQUIRES_CONFIRMATION",
         )
         self.assertEqual(self.service.workspace.snapshot(), before)
         self.assertEqual(self.service.coordinator.tasks, {})

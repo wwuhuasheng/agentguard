@@ -90,6 +90,13 @@ class DeterministicAgentArtsAdapter:
 
     @staticmethod
     def _build_plan_document(spec: ActivitySpec) -> str:
-        return "# {}\n\n时间：{}\n地点：{}\n".format(
+        document = "# {}\n\n时间：{}\n地点：{}\n".format(
             spec.title, spec.starts_at, spec.location
         )
+        if spec.schedule_assignments:
+            document += "\n## 匿名排班（用户已采纳）\n\n"
+            document += "".join(
+                "报名表第 {} 行 → {}\n".format(index, slot)
+                for index, slot in spec.schedule_assignments
+            )
+        return document

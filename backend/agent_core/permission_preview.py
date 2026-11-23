@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Dict
 from uuid import uuid4
 
 from backend.agent_core.agentarts_adapter import DeterministicAgentArtsAdapter
 from backend.agent_core.contracts import ActivitySpec
 from backend.policy_engine import PassportIssuer, PolicyEngine, PolicyRepository
+from backend.policy_guidance import explain_policy
 
 
 def preview_activity_permissions(
@@ -41,7 +43,7 @@ def preview_activity_permissions(
         "shared_file": "/workspace/activities/plan.md（仅模拟文件）",
         "send_notice": f"{spec.recipient_count} 人 · {spec.recipient}",
     }
-    return {
+    result = {
         "mode": "PREVIEW_ONLY",
         "source_trust_assumption": spec.source_trust.value,
         "warning": (
@@ -58,7 +60,36 @@ def preview_activity_permissions(
                 "risk_level": decision.risk_level.value,
                 "reasons": [reason.code for reason in decision.reasons],
                 "reason_messages": [reason.message for reason in decision.reasons],
+                "guidance": [
+                    {
+                        "reason_code": reason.code,
+                        "next_step": guide["next_step"],
+                        "rule_ref": guide["rule_ref"],
+                    }
+                    for reason in decision.reasons
+                    for guide in [explain_policy(reason.code)]
+                ],
             }
             for request, decision in zip(bound, decisions)
         ],
+    }
+    if spec.update_shared_file:
+        reduced = preview_activity_permissions(
+            repository, replace(spec, update_shared_file=False)
+        )
+        result["least_privilege_option"] = {
+            "change": {"update_shared_file": False},
+            "condition": "仅当本次活动不需要更新共享文件时采用；不会自动修改任务。",
+            "removed_actions": ["shared_file.update"],
+            "before": _decision_counts(result["steps"]),
+            "after": _decision_counts(reduced["steps"]),
+        }
+    return result
+
+
+def _decision_counts(steps: list[Dict[str, Any]]) -> Dict[str, int]:
+    return {
+        "tools": len(steps),
+        "confirmations": sum(step["decision"] == "CONFIRM" for step in steps),
+        "blocks": sum(step["decision"] == "BLOCK" for step in steps),
     }

@@ -1157,6 +1157,7 @@ tbody tr:hover {
 }
 .badge-rejected,
 .badge-expired,
+.badge-invalidated,
 .badge-failed {
   background: #e7e7e7;
   border-color: #aaa;
@@ -1764,6 +1765,22 @@ tbody tr:hover {
 }
 .recovery-log article > svg {
   margin-left: auto;
+}
+.local-report {
+  margin-bottom: 24px;
+}
+.local-report-import {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.local-report-import input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
 }
 .evaluation-notice {
   margin-bottom: 24px;

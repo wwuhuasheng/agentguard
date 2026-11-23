@@ -4,6 +4,7 @@ const base = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').repl
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...init.headers },
     signal: AbortSignal.timeout(10000),
   })
@@ -31,19 +32,22 @@ export const liveApi = {
     permissions: string[]
     activity?: ActivityInput
     reference?: ActivityReference
+    references?: ActivityReference[]
+    schedule_preview_sha256?: string
   }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(input) }),
   previewActivity: (input: { title: string; description: string; activity: ActivityInput }) =>
     request<ActivityPermissionPreview>('/api/activities/preview', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  previewReference: (input: { reference: ActivityReference; recipient_count: number }) =>
+  previewReference: (input: { references: ActivityReference[]; recipient_count: number }) =>
     request<ReferenceReviewPreview>('/api/activities/reference-preview', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
   task: (id: string) => request<Task>(`/api/tasks/${encodeURIComponent(id)}`),
   events: (id: string) => request<AuditEvent[]>(`/api/tasks/${encodeURIComponent(id)}/events`),
+  evidence: (id: string) => request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}/evidence`),
   approvals: () => request<Approval[]>('/api/approvals'),
   decide: (id: string, approved: boolean) =>
     request<Approval>(`/api/approvals/${encodeURIComponent(id)}/decision`, {

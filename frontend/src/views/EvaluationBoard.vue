@@ -2,12 +2,32 @@
 import { computed, ref } from 'vue'
 import { BarChart3, FlaskConical, Download, ArrowUpRight, Search } from 'lucide-vue-next'
 import { evaluationSamples } from '../mock/scenarios'
+import { parseLocalReplayReport, type LocalReplayReport } from '../evaluation/localReport'
 import StatusBadge from '../components/StatusBadge.vue'
 const samples = evaluationSamples(),
   category = ref('全部类别'),
   result = ref('all'),
   query = ref(''),
   page = ref(1)
+const localReport = ref<LocalReplayReport | null>(null)
+const importError = ref('')
+async function importLocalReport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importError.value = ''
+  localReport.value = null
+  if (file.size > 1024 * 1024) {
+    importError.value = '报告不能超过 1 MB。'
+    return
+  }
+  try {
+    localReport.value = parseLocalReplayReport(await file.text())
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : '读取报告失败。'
+  }
+}
 const categories = ['全部类别', '正常任务', '外部诱导', '越权调用', '参数异常', '故障恢复']
 const filtered = computed(() =>
   samples.filter(
@@ -96,6 +116,42 @@ function exportData() {
     </div>
     <button class="button" @click="exportData"><Download :size="16" />导出样例数据</button>
   </div>
+  <section class="panel local-report" aria-label="本地回放报告">
+    <div class="panel-heading">
+      <div>
+        <h2>本地回放报告</h2>
+        <p>导入回放脚本生成的 JSON；文件只在当前浏览器中读取，不上传后端。</p>
+      </div>
+      <label class="button local-report-import">
+        导入 JSON
+        <input type="file" accept=".json,application/json" aria-label="导入本地回放报告" @change="importLocalReport" />
+      </label>
+    </div>
+    <p class="helper">运行 <code>PYTHONPATH=. .venv/bin/python scripts/replay_local_eval.py --output /tmp/agentguard-local-replay.json</code> 后导入生成文件。来源是数据集作者的声明，真实来源需人工复核；本地回放不代表 AgentArts 评估或真实需求验证。</p>
+    <p v-if="importError" role="alert" class="result-fail">{{ importError }}</p>
+    <template v-if="localReport">
+      <p><strong>符合预期 {{ localReport.passed }} / {{ localReport.total }}</strong> · 未达预期 {{ localReport.failed }} 条 · 本地模拟回放</p>
+      <p class="helper">声明来源：虚构演示 {{ localReport.byProvenance.SYNTHETIC_DEMO }} 条 · 虚构攻击 {{ localReport.byProvenance.SYNTHETIC_ATTACK }} 条 · 脱敏真实 {{ localReport.byProvenance.REAL_DEIDENTIFIED }} 条</p>
+      <p class="helper">生成时间 {{ localReport.generatedAt }} · 代码 {{ localReport.codeRevision.slice(0, 12) }}{{ localReport.workingTreeDirty ? '（含未提交改动）' : '' }} · 策略摘要 {{ localReport.policyHash.slice(0, 12) }} · 数据集摘要 {{ localReport.datasetHash.slice(0, 12) }}</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>案例 ID</th><th>声明来源</th><th>类别</th><th>最终状态</th><th>审批工具</th><th>模拟副作用</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr v-for="row in localReport.rows.slice(0, 20)" :key="row.id">
+              <td class="mono">{{ row.id }}</td>
+              <td>{{ row.provenance === 'REAL_DEIDENTIFIED' ? '脱敏真实' : row.provenance === 'SYNTHETIC_ATTACK' ? '虚构攻击' : '虚构演示' }}</td>
+              <td>{{ row.category }}</td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.approvalTools.join(' → ') || '无' }}</td>
+              <td>{{ row.sideEffects }}</td>
+              <td :class="row.passed ? 'result-pass' : 'result-fail'">{{ row.passed ? '符合预期' : row.error || '未达预期' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="localReport.total > 20" class="helper">仅展示前 20 条；完整逐例结果请查看原始 JSON 报告。</p>
+    </template>
+  </section>
   <div class="evaluation-notice">
     <FlaskConical :size="21" />
     <div>

@@ -40,6 +40,7 @@ class TaskCoordinator:
             steps=bound_steps,
             evidence=plan.evidence,
             provider=plan.provider,
+            execution_id=plan.execution_id,
         )
         placeholder.total_steps = len(plan.steps)
         placeholder.plan_summary = plan.summary()
@@ -73,7 +74,7 @@ class TaskCoordinator:
         task.current_step += 1
         return self._run(task)
 
-    def cancel(self, task_id: str) -> TaskRecord:
+    def cancel(self, task_id: str, restore_snapshot: bool = True) -> TaskRecord:
         task = self.tasks.get(task_id)
         if task is None:
             raise KeyError("task not found: {}".format(task_id))
@@ -86,7 +87,12 @@ class TaskCoordinator:
                 "task cannot be cancelled from {}".format(task.status.value)
             )
         task.status = TaskStatus.CANCELLED
-        self._restore_task(task)
+        if restore_snapshot:
+            self._restore_task(task)
+        elif self.gateway.recovery:
+            # A stale target belongs to another operation; restoring the whole
+            # task snapshot could erase that newer operation's result.
+            self.gateway.recovery.complete_task(task.task_id)
         task.touch()
         return task
 

@@ -108,6 +108,8 @@ function viewTask() {
               ? '当前操作尚未执行。请确认下面的对象与数据范围。'
               : active.status === 'APPROVED'
                 ? '审批已批准，后续执行结果请查看任务轨迹。'
+                : active.status === 'INVALIDATED'
+                  ? '目标文件在等待期间发生变化，旧审批已失效。前序已执行步骤请到轨迹核对。'
                 : '该审批已结束，此次操作不会执行。'
           }}</span>
         </div>
@@ -132,6 +134,34 @@ function viewTask() {
             ><small>按来源信任级别审查</small>
           </article>
         </div>
+        <template v-if="active.impact_preview">
+          <h3>批准后的影响预览</h3>
+          <div class="notice">
+            <ShieldCheck :size="18" /><span>{{ active.impact_preview.warning }}</span>
+          </div>
+          <dl v-if="active.impact_preview.kind === 'FILE_UPDATE'" class="detail-fields">
+            <div>
+              <dt>目标版本</dt>
+              <dd>
+                当前 {{ active.impact_preview.before_line_count }} 行 → 拟写入
+                {{ active.impact_preview.after_line_count }} 行；版本摘要
+                {{ active.impact_preview.before_sha256?.slice(0, 12) || '新文件' }} →
+                {{ active.impact_preview.proposed_sha256?.slice(0, 12) }}
+              </dd>
+            </div>
+            <div>
+              <dt>内容差异</dt>
+              <dd>
+                <pre style="white-space: pre-wrap; overflow-wrap: anywhere">{{ active.impact_preview.diff || '内容无变化' }}</pre>
+                <small v-if="active.impact_preview.diff_truncated">差异较长，仅展示前 4000 字。</small>
+              </dd>
+            </div>
+          </dl>
+          <p v-else-if="active.impact_preview.kind === 'NOTICE_SEND'" class="helper">
+            将向 {{ active.impact_preview.recipient }} 所代表的
+            {{ active.impact_preview.recipient_count }} 名对象新增一条模拟通知记录；请核对地址和人数。
+          </p>
+        </template>
         <h3>准备执行什么</h3>
         <dl class="detail-fields">
           <div v-for="(value, key) in active.tool_request.arguments" :key="key">

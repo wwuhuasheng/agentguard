@@ -64,6 +64,13 @@ export interface ActivityPermissionPreview {
   mode: 'PREVIEW_ONLY'
   source_trust_assumption: TrustLevel
   warning: string
+  least_privilege_option?: {
+    change: { update_shared_file: false }
+    condition: string
+    removed_actions: string[]
+    before: { tools: number; confirmations: number; blocks: number }
+    after: { tools: number; confirmations: number; blocks: number }
+  }
   steps: {
     tool_name: string
     action: string
@@ -73,6 +80,7 @@ export interface ActivityPermissionPreview {
     risk_level: RiskLevel
     reasons: string[]
     reason_messages: string[]
+    guidance?: { reason_code: string; next_step: string; rule_ref: string }[]
   }[]
 }
 export type TaskStatus =
@@ -112,10 +120,12 @@ export interface SourceSummary {
 export interface ReferenceReviewPreview {
   mode: 'PREVIEW_ONLY'
   source_summary: SourceSummary
+  source_summaries?: SourceSummary[]
   checks: {
     code: string
     severity: 'INFO' | 'REVIEW'
     message: string
+    source_name?: string
   }[]
   schedule_proposal?: {
     basis: string
@@ -145,9 +155,12 @@ export interface Task {
   events: AuditEvent[]
   replay: boolean
   source_summary?: SourceSummary
+  source_summaries?: SourceSummary[]
+  adopted_schedule_count?: number
   passport_id?: string
   agent_plan?: {
     provider: string
+    execution_id?: string
     step_count: number
     steps: { agent_id: string; tool_name: string; action: string }[]
     agent_evidence: { role: string; conclusion: string; evidence: Record<string, unknown> }[]
@@ -158,11 +171,26 @@ export interface Approval {
   request_id: string
   task_id: string
   summary: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'INVALIDATED'
   expires_at: string
   resolved_at?: string
   tool_request: ToolRequest
   reasons: RiskEvidence[]
+  invalidation_code?: 'TARGET_CHANGED'
+  impact_preview?: {
+    kind: 'FILE_UPDATE' | 'NOTICE_SEND' | 'OTHER'
+    warning: string
+    path?: string
+    before_sha256?: string | null
+    proposed_sha256?: string | null
+    before_line_count?: number
+    after_line_count?: number
+    diff?: string
+    diff_truncated?: boolean
+    recipient?: string
+    recipient_count?: number
+    content_sha256?: string | null
+  }
 }
 export interface Incident {
   incident_id: string

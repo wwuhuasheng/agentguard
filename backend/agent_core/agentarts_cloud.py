@@ -25,6 +25,9 @@ from backend.agent_core.contracts import (
 
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _RUNTIME_PATH = re.compile(r"/runtimes/[A-Za-z0-9_-]{1,64}/invocations")
+_SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_REDACTED_RECIPIENT = "withheld@example.org"
+_REDACTED_NOTICE = "通知正文仅在本地策略与执行链处理"
 
 
 class AgentArtsError(RuntimeError):
@@ -65,6 +68,8 @@ class AgentArtsRuntimeClient:
 
     def invoke(self, inputs: Dict[str, Any], session_id: str) -> Dict[str, Any]:
         """Return the terminal workflow event without exposing credentials."""
+        if not _SESSION_ID.fullmatch(session_id):
+            raise AgentArtsError("AgentArts session ID is invalid")
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
@@ -105,7 +110,12 @@ class AgentArtsRuntimeClient:
         if not isinstance(data, dict):
             raise AgentArtsError("AgentArts workflow result is invalid")
         status = data.get("status", {})
-        if not isinstance(status, dict) or status.get("desc") != "succeeded":
+        if (
+            not isinstance(status, dict)
+            or status.get("code") != 1
+            or status.get("desc") != "succeeded"
+            or data.get("error_code") not in (None, "")
+        ):
             raise AgentArtsError("AgentArts workflow did not succeed")
         return finished
 
@@ -143,21 +153,40 @@ class AgentArtsWorkflowPlanner:
         self.local = DeterministicAgentArtsAdapter()
 
     def plan_activity(self, task_id: str, spec: ActivitySpec) -> OrchestrationPlan:
-        finished = self.client.invoke(
+        reference_signals_json = json.dumps(
+            spec.reference_signals or {"present": False},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        # The task-workflow template exposes query plus typed fields. Recipient
+        # and notice are not referenced by any cloud node, but placeholders keep
+        # the current Start schema satisfied without exporting private values.
+        # The local, user-confirmed spec remains the only source of tool arguments.
+        query = json.dumps(
             {
                 "title": spec.title,
                 "starts_at": spec.starts_at,
                 "location": spec.location,
-                "recipient": spec.recipient,
                 "recipient_count": spec.recipient_count,
-                "notice_content": spec.notice_content,
                 "source_trust": spec.source_trust.value,
                 "update_shared_file": spec.update_shared_file,
-                "reference_signals_json": json.dumps(
-                    spec.reference_signals or {"present": False},
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                "reference_signals": json.loads(reference_signals_json),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        finished = self.client.invoke(
+            {
+                "query": query,
+                "title": spec.title,
+                "starts_at": spec.starts_at,
+                "location": spec.location,
+                "recipient": _REDACTED_RECIPIENT,
+                "recipient_count": spec.recipient_count,
+                "notice_content": _REDACTED_NOTICE,
+                "source_trust": spec.source_trust.value,
+                "update_shared_file": spec.update_shared_file,
+                "reference_signals_json": reference_signals_json,
             },
             session_id=task_id,
         )
@@ -167,33 +196,62 @@ class AgentArtsWorkflowPlanner:
         fields = output.get("user_fields") or {}
         raw = fields.get("agent_evidence_json") if isinstance(fields, dict) else None
         raw = raw or output.get("responseContent")
+        local_plan = self.local.plan_activity(task_id, spec)
+        signals = spec.reference_signals or {}
+        safe_evidence = {
+            AgentRole.BUSINESS: {
+                "selected_steps": [
+                    f"{step.tool_name}.{step.action}" for step in local_plan.steps
+                ]
+            },
+            AgentRole.CONTENT_ISOLATION: {
+                "reference_present": signals.get("present") is True,
+                "possible_instruction": signals.get("possible_instruction") is True,
+                "has_sensitive_columns": signals.get("has_sensitive_columns") is True,
+            },
+            AgentRole.BEHAVIOR_GUARD: {
+                "file_update_selected": spec.update_shared_file,
+                "notice_count": spec.recipient_count,
+                "decision_owner": "POLICY_GATEWAY",
+            },
+        }
         try:
             value = json.loads(raw) if isinstance(raw, str) else raw
             records = value["agent_evidence"]
             if not isinstance(records, list) or len(records) != 3:
                 raise ValueError("three agent evidence records are required")
-            evidence = [
-                AgentEvidence(
-                    role=AgentRole(item["role"]),
-                    conclusion=item["conclusion"],
-                    evidence=item.get("evidence", {}),
-                )
-                for item in records
-            ]
+            evidence = []
+            for item in records:
+                if not isinstance(item, dict):
+                    raise ValueError("agent record must be an object")
+                role = AgentRole(item["role"])
+                conclusion = item["conclusion"]
+                claims = item.get("evidence", {})
+                expected = safe_evidence[role]
+                if (
+                    not isinstance(conclusion, str)
+                    or not conclusion.strip()
+                    or len(conclusion) > 600
+                    or not isinstance(claims, dict)
+                    or any(
+                        key in claims and claims[key] != expected[key]
+                        for key in expected
+                    )
+                ):
+                    raise ValueError("agent evidence is malformed")
+                evidence.append(AgentEvidence(role, conclusion, expected))
             if {item.role for item in evidence} != set(AgentRole):
                 raise ValueError("agent roles are incomplete")
-            if any(
-                not isinstance(item.conclusion, str)
-                or not item.conclusion.strip()
-                or not isinstance(item.evidence, dict)
-                for item in evidence
-            ):
-                raise ValueError("agent evidence is malformed")
         except (KeyError, TypeError, ValueError) as exc:
             raise AgentArtsError("AgentArts evidence contract was not met") from exc
         # Cloud output is advisory. It never chooses tools or signs a passport.
-        local_plan = self.local.plan_activity(task_id, spec)
-        return OrchestrationPlan(task_id, local_plan.steps, evidence, self.provider)
+        execution_id = finished["data"].get("execution_id")
+        if not isinstance(execution_id, str) or not _SESSION_ID.fullmatch(execution_id):
+            execution_id = None
+        return OrchestrationPlan(
+            task_id, local_plan.steps, evidence, self.provider,
+            execution_id=execution_id,
+        )
 
 
 def planner_from_env() -> PlanningAdapter:

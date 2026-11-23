@@ -1,7 +1,9 @@
 import sys
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -99,6 +101,23 @@ class TaskServiceApprovalTests(unittest.TestCase):
         self.service.decide(approval["approval_id"], approved=True)
         with self.assertRaises(PermissionError):
             self.service.decide(approval["approval_id"], approved=True)
+
+    def test_concurrent_decisions_execute_notice_once(self):
+        self.service.create_task("群发通知", "40 人通知", "approval")
+        approval_id = self.service.list_approvals()[0]["approval_id"]
+        start = Barrier(2)
+
+        def decide():
+            start.wait()
+            try:
+                return self.service.decide(approval_id, approved=True)["status"]
+            except PermissionError:
+                return "CONFLICT"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: decide(), range(2)))
+        self.assertCountEqual(results, ["APPROVED", "CONFLICT"])
+        self.assertEqual(len(self.service.workspace.notifications), 1)
 
 
 class TaskServiceExpiryTests(unittest.TestCase):

@@ -7,6 +7,7 @@ import TaskConsole from './TaskConsole.vue'
 import ApprovalCenter from './ApprovalCenter.vue'
 import TraceTimeline from './TraceTimeline.vue'
 import EvaluationBoard from './EvaluationBoard.vue'
+import { LOCAL_REPLAY_SOURCE } from '../evaluation/localReport'
 import IncidentDetail from './IncidentDetail.vue'
 import App from '../App.vue'
 import { useConsoleStore } from '../stores/console'
@@ -161,6 +162,36 @@ describe('rendered page interactions', () => {
     await flushPromises()
     expect(JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body)).activity.update_shared_file).toBe(false)
   })
+  it('applies the least privilege option only after a user click', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const selected = JSON.parse(String(init?.body)).activity.update_shared_file
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          mode: 'PREVIEW_ONLY', warning: '仅预览', steps: [],
+          ...(selected ? { least_privilege_option: {
+            change: { update_shared_file: false },
+            condition: '仅当本次活动不需要更新共享文件时采用。',
+            removed_actions: ['shared_file.update'],
+            before: { tools: 3, confirmations: 2, blocks: 0 },
+            after: { tools: 2, confirmations: 1, blocks: 0 },
+          } } : {}),
+        }),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await render(TaskConsole, true)
+    await wrapper!.get('#activity-time').setValue('2026-11-15T10:00')
+    await wrapper!.findAll('button').find((b) => b.text().includes('预览本次权限'))!.trigger('click')
+    await flushPromises()
+    expect((wrapper!.get('#update-shared-file').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper!.get('[aria-label="最小权限方案"]').text()).toContain('3 个减至 2 个')
+    await wrapper!.get('[aria-label="最小权限方案"] button').trigger('click')
+    await flushPromises()
+    expect((wrapper!.get('#update-shared-file').element as HTMLInputElement).checked).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).activity.update_shared_file).toBe(false)
+  })
   it('reads a de-identified TXT reference in live mode and includes it in the task request', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -188,8 +219,51 @@ describe('rendered page interactions', () => {
     await flushPromises()
     const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     const body = JSON.parse(String(request.body))
-    expect(body.reference).toEqual({ name: '外部策划.txt', content: text })
+    expect(body.references).toEqual([{ name: '外部策划.txt', content: text }])
     expect(body.permissions).toEqual([])
+  })
+  it('reviews a TXT plan and CSV roster in the same live task', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true, status: 200,
+      json: async () => ({
+        mode: 'PREVIEW_ONLY', warning: '分别核对',
+        source_summary: { name: '报名.csv', format: 'csv', sha256: 'csv-hash', row_count: 2, flags: [] },
+        source_summaries: [
+          { name: '策划.txt', format: 'txt', sha256: 'txt-hash', flags: [] },
+          { name: '报名.csv', format: 'csv', sha256: 'csv-hash', row_count: 2, flags: [] },
+        ],
+        checks: [],
+        activity_draft: {
+          starts_at: '2026-12-20T09:00+08:00', location: '社区服务中心',
+          source_lines: { starts_at: 1, location: 2 }, warning: '待核对',
+        },
+        schedule_proposal: {
+          basis: '标准时段', assignments: [{ candidate_index: 1, slot: '上午' }, { candidate_index: 2, slot: '下午' }],
+          unassigned_indices: [], slot_counts: { 上午: 1, 下午: 1 }, warning: '待核对',
+        },
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await render(TaskConsole, true)
+    const input = wrapper!.get('input[type="file"]')
+    for (const [name, content] of [
+      ['策划.txt', '活动时间：2026-12-20T09:00+08:00\n活动地点：社区服务中心\n'],
+      ['报名.csv', 'availability\n上午\n下午\n'],
+    ]) {
+      const file = new File([content!], name!, { type: 'text/plain' })
+      Object.defineProperty(file, 'arrayBuffer', {
+        value: async () => new TextEncoder().encode(content!).buffer,
+      })
+      Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+      await input.trigger('change')
+    }
+    await wrapper!.get('#activity-count').setValue('2')
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对资料与通知人数'))!.trigger('click')
+    await flushPromises()
+    const request = fetchMock.mock.calls[0]![1] as RequestInit
+    expect(JSON.parse(String(request.body)).references.map((r: { name: string }) => r.name)).toEqual(['策划.txt', '报名.csv'])
+    expect(wrapper!.get('[aria-label="活动信息草案"]').text()).toContain('社区服务中心')
+    expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('报名表第 2 行')
   })
   it('shows reference review suggestions and hides them when the recipient count changes', async () => {
     const fetchMock = vi.fn(async () => ({
@@ -237,6 +311,55 @@ describe('rendered page interactions', () => {
     expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('第 2 行')
     await wrapper!.get('#activity-count').setValue('2')
     expect(wrapper!.find('[aria-label="资料核对建议"]').exists()).toBe(false)
+  })
+  it('requires explicit adoption before submitting an anonymous schedule', async () => {
+    const digest = 'a'.repeat(64)
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: url.includes('reference-preview') ? 200 : 201,
+      json: async () => url.includes('reference-preview')
+        ? {
+            mode: 'PREVIEW_ONLY', warning: '仅供核对', checks: [],
+            source_summary: {
+              name: '报名表.csv', format: 'csv', sha256: digest, row_count: 2,
+              source_trust: 'EXTERNAL_UNTRUSTED', flags: [], byte_size: 24,
+            },
+            schedule_proposal: {
+              basis: '标准时段', assignments: [
+                { candidate_index: 1, slot: '上午' },
+                { candidate_index: 2, slot: '下午' },
+              ],
+              unassigned_indices: [], slot_counts: { 上午: 1, 下午: 1 },
+              warning: '需用户采纳',
+            },
+          }
+        : {
+            task_id: 'schedule-task', title: '活动', description: '通知', scenario: 'activity',
+            status: 'WAITING_APPROVAL', created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(), files: [], permissions: [], events: [], replay: false,
+          },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await render(TaskConsole, true)
+    const csv = 'availability\n上午\n下午\n'
+    const file = new File([csv], '报名表.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode(csv).buffer,
+    })
+    const input = wrapper!.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    await input.trigger('change')
+    await wrapper!.get('#activity-count').setValue('2')
+    await wrapper!.get('#activity-time').setValue('2026-11-15T10:00')
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对资料与通知人数'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('核对后采纳')
+    await wrapper!.findAll('button').find((b) => b.text().includes('核对后采纳'))!.trigger('click')
+    expect(wrapper!.get('[aria-label="匿名排班建议"]').text()).toContain('已采纳')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    const body = JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body))
+    expect(body.schedule_preview_sha256).toBe(digest)
   })
   it('fills activity fields from a TXT draft only after an explicit click', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -290,6 +413,25 @@ describe('rendered page interactions', () => {
     await wrapper!.findAll('.tabs button')[1]!.trigger('click')
     expect(wrapper!.text()).toContain('UI approval')
   })
+  it('shows the file impact diff before a shared-file approval', async () => {
+    const s = await render(ApprovalCenter)
+    await s.create('recovery', '文件版本预览', 'test', [])
+    tick(s, 4)
+    s.pending[0]!.impact_preview = {
+      kind: 'FILE_UPDATE',
+      warning: '模拟文件；批准时复核版本。',
+      path: '/workspace/activities/roster.csv',
+      before_sha256: 'a'.repeat(64),
+      proposed_sha256: 'b'.repeat(64),
+      before_line_count: 1,
+      after_line_count: 2,
+      diff: '--- 当前模拟文件\n+++ 拟写入内容\n-旧版本\n+新版本',
+    }
+    await flushPromises()
+    expect(wrapper!.text()).toContain('批准后的影响预览')
+    expect(wrapper!.text()).toContain('新版本')
+    expect(wrapper!.text()).toContain('模拟文件；批准时复核版本。')
+  })
   it('filters and expands timeline events', async () => {
     await render(TraceTimeline)
     await wrapper!.get('[aria-label="筛选事件类型"]').setValue('POLICY_DECISION')
@@ -306,6 +448,35 @@ describe('rendered page interactions', () => {
     await wrapper!.get('[aria-label="筛选样例结果"]').setValue('fail')
     expect(wrapper!.findAll('tbody tr')).toHaveLength(4)
     expect(wrapper!.text()).toContain('1 / 1')
+  })
+  it('imports a local replay report without presenting it as AgentArts evaluation', async () => {
+    await render(EvaluationBoard)
+    const report = {
+      schema_version: 1, source: LOCAL_REPLAY_SOURCE,
+      generated_at_utc: '2026-11-21T02:00:00+00:00',
+      code_revision: 'a'.repeat(40), working_tree_dirty: true,
+      policy_sha256: 'b'.repeat(64),
+      dataset_sha256: 'c'.repeat(64),
+      total: 1, passed: 1, failed: 0,
+      by_provenance: { SYNTHETIC_DEMO: 1, SYNTHETIC_ATTACK: 0, REAL_DEIDENTIFIED: 0 },
+      results: [{
+        id: 'LOCAL-01', category: 'normal', provenance: 'SYNTHETIC_DEMO', passed: true,
+        actual: {
+          status: 'COMPLETED', approval_tools: [],
+          side_effects: { calendar_events: 1, notifications: 1, files_changed: false },
+        },
+      }],
+    }
+    const input = wrapper!.get('[aria-label="导入本地回放报告"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [{ size: 100, text: async () => JSON.stringify(report) }],
+    })
+    await input.trigger('change')
+    await flushPromises()
+    expect(wrapper!.get('[aria-label="本地回放报告"]').text()).toContain('符合预期 1 / 1')
+    expect(wrapper!.get('[aria-label="本地回放报告"]').text()).toContain('本地模拟回放')
+    expect(wrapper!.get('[aria-label="本地回放报告"]').text()).toContain('不代表 AgentArts 评估')
   })
   it('shows snapshot equality after the recovery scenario', async () => {
     const s = await render(IncidentDetail)
