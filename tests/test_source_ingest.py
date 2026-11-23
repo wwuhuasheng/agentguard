@@ -148,6 +148,47 @@ class SourceIngestTests(unittest.TestCase):
                     preview_reference_review("策划.txt", text, 12)["activity_draft"]
                 )
 
+    def test_conflicting_activity_fields_require_review_without_leaking_values(self):
+        text = (
+            "活动时间：2026-12-20T09:00+08:00\n"
+            "活动地点：社区服务中心\n"
+            "活动时间：2026-12-21T09:00+08:00\n"
+            "活动地点：社区图书馆\n"
+        )
+        result = preview_reference_review("策划.txt", text, 12)
+        self.assertIsNone(result["activity_draft"])
+        check = next(
+            item for item in result["checks"]
+            if item["code"] == "AMBIGUOUS_ACTIVITY_FIELDS"
+        )
+        self.assertEqual(check["severity"], "REVIEW")
+        self.assertNotIn("社区图书馆", str(result))
+        self.assertNotIn("2026-12-21T09:00", str(result))
+
+    def test_repeated_identical_activity_fields_are_not_ambiguous(self):
+        text = (
+            "活动时间：2026-12-20T09:00+08:00\n"
+            "活动地点：社区服务中心\n"
+            "活动时间：2026-12-20T09:00+08:00\n"
+        )
+        result = preview_reference_review("策划.txt", text, 12)
+        self.assertEqual(result["activity_draft"]["source_lines"]["starts_at"], 1)
+        self.assertNotIn(
+            "AMBIGUOUS_ACTIVITY_FIELDS", [x["code"] for x in result["checks"]]
+        )
+
+    def test_two_availability_columns_do_not_produce_schedule(self):
+        text = (
+            "availability,shift,name\n"
+            "上午,下午,虚构甲\n"
+        )
+        result = preview_reference_review("报名.csv", text, 1)
+        self.assertIsNone(result["schedule_proposal"])
+        self.assertIn(
+            "AMBIGUOUS_SCHEDULE_COLUMN", [x["code"] for x in result["checks"]]
+        )
+        self.assertNotIn("虚构甲", str(result))
+
 
 if __name__ == "__main__":
     unittest.main()

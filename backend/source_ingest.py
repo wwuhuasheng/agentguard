@@ -84,6 +84,61 @@ def safe_reference_signals(summary: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def review_reference_bundle(
+    references: list[tuple[str, str]], recipient_count: int
+) -> Dict[str, Any]:
+    """Review one TXT and/or one CSV without joining their untrusted contents."""
+    if not references or len(references) > 2:
+        raise ValueError("provide one or two references")
+    reviews = [
+        preview_reference_review(name, content, recipient_count)
+        for name, content in references
+    ]
+    summaries = [review["source_summary"] for review in reviews]
+    formats = [summary["format"] for summary in summaries]
+    if len(formats) != len(set(formats)):
+        raise ValueError("provide at most one TXT and one CSV")
+    primary = next(
+        (review for review in reviews if review["source_summary"]["format"] == "csv"),
+        reviews[0],
+    )
+    checks = [
+        {**check, "source_name": review["source_summary"]["name"]}
+        for review in reviews
+        for check in review["checks"]
+    ]
+    return {
+        "mode": "PREVIEW_ONLY",
+        "source_summary": primary["source_summary"],
+        "source_summaries": summaries,
+        "checks": checks,
+        "schedule_proposal": primary["schedule_proposal"],
+        "activity_draft": next(
+            (
+                review["activity_draft"]
+                for review in reviews
+                if review["activity_draft"]
+            ),
+            None,
+        ),
+        "warning": "资料分别作为不可信来源核对；草案需用户采纳，不能授予新权限。",
+    }
+
+
+def safe_bundle_signals(summaries: list[Dict[str, Any]]) -> Dict[str, Any]:
+    """Send only combined value-free risk signals to advisory AgentArts nodes."""
+    csv_summary = next((x for x in summaries if x["format"] == "csv"), None)
+    return {
+        "present": True,
+        "format": "+".join(sorted(x["format"] for x in summaries)),
+        "row_count": csv_summary.get("row_count") if csv_summary else None,
+        "has_sensitive_columns": any(x.get("sensitive_columns") for x in summaries),
+        "possible_instruction": any(
+            "POSSIBLE_INSTRUCTION_IN_REFERENCE" in x["flags"] for x in summaries
+        ),
+    }
+
+
 def preview_reference_review(
     name: str, content: str, recipient_count: int
 ) -> Dict[str, Any]:
@@ -139,8 +194,30 @@ def preview_reference_review(
                 "不会改变收件人或工具权限。"
             ),
         })
-    proposal = _schedule_proposal(content) if summary["format"] == "csv" else None
-    activity_draft = _activity_draft(content) if summary["format"] == "txt" else None
+    proposal = None
+    activity_draft = None
+    if summary["format"] == "csv":
+        proposal, ambiguous_schedule = _schedule_proposal(content)
+        if ambiguous_schedule:
+            checks.append({
+                "code": "AMBIGUOUS_SCHEDULE_COLUMN",
+                "severity": "REVIEW",
+                "message": (
+                    "报名表包含多个可参与时段列；"
+                    "请先核对并保留一个时段列，再生成匿名排班。"
+                ),
+            })
+    else:
+        activity_draft, ambiguous_fields = _activity_draft(content)
+        if ambiguous_fields:
+            checks.append({
+                "code": "AMBIGUOUS_ACTIVITY_FIELDS",
+                "severity": "REVIEW",
+                "message": (
+                    "策划书中的" + "、".join(ambiguous_fields) +
+                    "出现不同取值；请先核对，系统不会自动采用其中一处。"
+                ),
+            })
     return {
         "mode": "PREVIEW_ONLY",
         "source_summary": summary,
@@ -151,29 +228,37 @@ def preview_reference_review(
     }
 
 
-def _activity_draft(content: str) -> Optional[Dict[str, Any]]:
+def _activity_draft(content: str) -> tuple[Optional[Dict[str, Any]], list[str]]:
     """Extract only explicit bounded fields; never interpret prose as authority."""
     fields: Dict[str, str] = {}
     field_lines: Dict[str, int] = {}
+    ambiguous_fields: set[str] = set()
     for line_number, line in enumerate(content.splitlines(), start=1):
         match = re.fullmatch(r"\s*(活动时间|活动地点)\s*[：:]\s*(.*?)\s*", line)
-        if match and match.group(1) not in fields:
-            fields[match.group(1)] = match.group(2)
-            field_lines[match.group(1)] = line_number
+        if not match:
+            continue
+        key, value = match.group(1), match.group(2)
+        if key in fields and fields[key] != value:
+            ambiguous_fields.add(key)
+        elif key not in fields:
+            fields[key] = value
+            field_lines[key] = line_number
+    if ambiguous_fields:
+        return None, sorted(ambiguous_fields)
     starts_at = fields.get("活动时间", "")
     location = fields.get("活动地点", "")
     time_pattern = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?:\+08:00|\+09:00|\+00:00)"
     if not re.fullmatch(time_pattern, starts_at):
-        return None
+        return None, []
     try:
         datetime.fromisoformat(starts_at)
     except ValueError:
-        return None
+        return None, []
     location_pattern = r"[\w\u4e00-\u9fff\s·（）()—-]+"
     if not 1 <= len(location) <= 120 or not re.fullmatch(
         location_pattern, location
     ):
-        return None
+        return None, []
     return {
         "starts_at": starts_at,
         "location": location,
@@ -185,26 +270,26 @@ def _activity_draft(content: str) -> Optional[Dict[str, Any]]:
             "从外部 TXT 提取的待核对草案；只有用户点击采纳才会填入表单，"
             "不构成执行授权。"
         ),
-    }
+    }, []
 
 
-def _schedule_proposal(content: str) -> Optional[Dict[str, Any]]:
+def _schedule_proposal(content: str) -> tuple[Optional[Dict[str, Any]], bool]:
     """Use only a controlled availability vocabulary; never return CSV values."""
     reader = csv.DictReader(io.StringIO(content, newline=""), strict=True)
     assert reader.fieldnames is not None  # validated by inspect_reference
     columns = {
         name.strip().lower().lstrip("\ufeff"): name for name in reader.fieldnames
     }
-    column = next(
-        (
-            columns[key]
-            for key in ("availability", "可参与时段", "shift", "班次")
-            if key in columns
-        ),
-        None,
-    )
-    if column is None:
-        return None
+    candidates = [
+        columns[key]
+        for key in ("availability", "可参与时段", "shift", "班次")
+        if key in columns
+    ]
+    if len(candidates) > 1:
+        return None, True
+    if not candidates:
+        return None, False
+    column = candidates[0]
     counts = {"上午": 0, "下午": 0}
     assignments = []
     unassigned = []
@@ -232,7 +317,7 @@ def _schedule_proposal(content: str) -> Optional[Dict[str, Any]]:
             "匿名排班草案；请核对人员意愿与实际名单后另行确认，"
             "草案不会自动执行。"
         ),
-    }
+    }, False
 
 
 def _inspect_csv(content: str, flags: list[str]) -> Dict[str, Any]:

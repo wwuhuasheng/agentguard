@@ -233,14 +233,16 @@ export const useConsoleStore = defineStore('console', () => {
     files: FileMeta[],
     replay = false,
     activity?: ActivityInput,
-    reference?: ActivityReference
+    references?: ActivityReference[],
+    schedulePreviewSha256?: string
   ) {
     if (busy.value) return
     busy.value = true
     try {
       if (mode.value === 'live') {
         const t = await liveApi.create({
-          title, description, scenario, files, permissions: [], activity, reference,
+          title, description, scenario, files, permissions: [], activity, references,
+          schedule_preview_sha256: schedulePreviewSha256,
         })
         t.events = t.events || []
         tasks.value.unshift(t)
@@ -559,24 +561,33 @@ export const useConsoleStore = defineStore('console', () => {
     save()
     if (mode.value === 'live') void refresh()
   }
-  function exportTrace() {
+  async function exportTrace() {
     if (!current.value) return
+    const taskId = current.value.task_id
+    let content: Record<string, unknown>
+    try {
+      content =
+        mode.value === 'live'
+          ? await liveApi.evidence(taskId)
+          : { data_source: mode.value, task: current.value, exported_at: new Date().toISOString() }
+    } catch (error) {
+      notify(`导出失败：${error instanceof Error ? error.message : '网络异常'}`)
+      return
+    }
     const blob = new Blob(
-      [
-        JSON.stringify(
-          { data_source: mode.value, task: current.value, exported_at: new Date().toISOString() },
-          null,
-          2
-        ),
-      ],
+      [JSON.stringify(content, null, 2)],
       { type: 'application/json' }
     )
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `agentguard-${current.value.task_id}.json`
+    link.download = `agentguard-${mode.value === 'live' ? 'evidence' : 'trace'}-${taskId}.json`
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+    const manifest = content.manifest as { event_root_sha256?: unknown } | undefined
+    return mode.value === 'live' && typeof manifest?.event_root_sha256 === 'string'
+      ? manifest.event_root_sha256
+      : undefined
   }
   return {
     mode,

@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from difflib import unified_diff
+from hashlib import sha256
+from threading import RLock
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
@@ -48,6 +51,10 @@ def request_to_dict(request: ToolRequest) -> Dict[str, object]:
     return value
 
 
+def content_sha256(value: Optional[str]) -> Optional[str]:
+    return sha256(value.encode("utf-8")).hexdigest() if value is not None else None
+
+
 class TaskService:
     """Runs demo scenarios through the real gateway and exposes Task state."""
 
@@ -66,6 +73,7 @@ class TaskService:
         self._approvals: Dict[str, Dict[str, object]] = {}
         self._incidents: Dict[str, Dict[str, object]] = {}
         self._requests: Dict[str, ToolRequest] = {}
+        self._decision_lock = RLock()
         self._file_failures_pending = 0
         self._last_damaged_content = ""
 
@@ -82,18 +90,21 @@ class TaskService:
         """Register workspace tools; file updates route through failure logic."""
 
         def file_tool(action: str, arguments: Dict[str, object]) -> Dict[str, object]:
-            if (
-                action == "update"
-                and self._file_failures_pending > 0
-                and str(arguments.get("path", "")).startswith("/workspace/activities/")
-            ):
-                self._file_failures_pending -= 1
-                if self._file_failures_pending == CIRCUIT_FAILURE_THRESHOLD - 1:
-                    # First attempt damages the file before the timeout fires.
-                    self.workspace.files[arguments["path"]] = arguments["content"]
-                    self._last_damaged_content = str(arguments["content"])
-                raise TimeoutError("模拟文件服务超时")
-            return self.workspace.file_tool(action, arguments)
+            with self._decision_lock:
+                if (
+                    action == "update"
+                    and self._file_failures_pending > 0
+                    and str(arguments.get("path", "")).startswith(
+                        "/workspace/activities/"
+                    )
+                ):
+                    self._file_failures_pending -= 1
+                    if self._file_failures_pending == CIRCUIT_FAILURE_THRESHOLD - 1:
+                        # First attempt damages the file before the timeout fires.
+                        self.workspace.files[arguments["path"]] = arguments["content"]
+                        self._last_damaged_content = str(arguments["content"])
+                    raise TimeoutError("模拟文件服务超时")
+                return self.workspace.file_tool(action, arguments)
 
         registry.register("calendar", self.workspace.calendar_tool)
         registry.register("send_notice", self.workspace.notice_tool)
@@ -205,6 +216,7 @@ class TaskService:
         permissions: Optional[List[str]] = None,
         activity: Optional[ActivitySpec] = None,
         source_summary: Optional[Dict[str, object]] = None,
+        source_summaries: Optional[List[Dict[str, object]]] = None,
     ) -> Dict[str, object]:
         if scenario not in {"normal", "approval", "block", "recovery", "activity"}:
             raise ValueError(
@@ -216,13 +228,18 @@ class TaskService:
             title, description, scenario, files or [], permissions or []
         )
         self._tasks[task["task_id"]] = task
-        if source_summary is not None:
+        if source_summaries:
+            task["source_summaries"] = source_summaries
+            task["source_summary"] = source_summaries[0]
+        elif source_summary is not None:
             task["source_summary"] = source_summary
+            source_summaries = [source_summary]
+        for summary in source_summaries or []:
             self._record_service_event(
                 str(task["task_id"]),
                 "SOURCE_INSPECTED",
                 {
-                    **source_summary,
+                    **summary,
                     "summary": "已隔离检查脱敏参考资料，资料内容不构成执行授权。",
                 },
             )
@@ -266,6 +283,16 @@ class TaskService:
     def _run_activity(self, task: Dict[str, object], activity: ActivitySpec) -> None:
         """Run user-supplied fields through the real task coordinator."""
         assert self.coordinator is not None
+        if activity.schedule_assignments:
+            task["adopted_schedule_count"] = len(activity.schedule_assignments)
+            self._record_service_event(
+                str(task["task_id"]),
+                "SCHEDULE_ADOPTED",
+                {
+                    "summary": "用户采纳匿名排班，待审批后写入共享活动文件。",
+                    "assigned_count": len(activity.schedule_assignments),
+                },
+            )
         core = self.coordinator.create_activity(activity, task_id=str(task["task_id"]))
         for request in self.coordinator.requests_for(str(task["task_id"])):
             self._requests[request.request_id] = request
@@ -427,6 +454,43 @@ class TaskService:
             return "更新共享排班文件"
         return "执行 {} / {}".format(request.tool_name, request.action)
 
+    def _impact_preview(self, request: ToolRequest) -> Dict[str, object]:
+        if request.tool_name == "shared_file" and request.action == "update":
+            path = str(request.arguments["path"])
+            before = self.workspace.files.get(path)
+            proposed = str(request.arguments["content"])
+            changes = "\n".join(
+                unified_diff(
+                    (before or "").splitlines(),
+                    proposed.splitlines(),
+                    fromfile="当前模拟文件",
+                    tofile="拟写入内容",
+                    lineterm="",
+                )
+            )
+            return {
+                "kind": "FILE_UPDATE",
+                "path": path,
+                "before_sha256": content_sha256(before),
+                "proposed_sha256": content_sha256(proposed),
+                "before_line_count": len((before or "").splitlines()),
+                "after_line_count": len(proposed.splitlines()),
+                "diff": changes[:4000],
+                "diff_truncated": len(changes) > 4000,
+                "warning": "模拟文件；批准时会重新核对当前版本，变化后旧审批失效。",
+            }
+        if request.tool_name == "send_notice" and request.action == "send":
+            return {
+                "kind": "NOTICE_SEND",
+                "recipient": request.arguments.get("recipient"),
+                "recipient_count": request.arguments.get("recipient_count", 1),
+                "content_sha256": content_sha256(
+                    str(request.arguments.get("content", ""))
+                ),
+                "warning": "只新增一条模拟通知记录，不会发送真实邮件或消息。",
+            }
+        return {"kind": "OTHER", "warning": "操作将在批准后交给策略网关执行。"}
+
     def _open_approval(self, task: Dict[str, object], request: ToolRequest) -> None:
         assert self.gateway is not None
         pending = self.gateway.pending.get(request.request_id)
@@ -444,9 +508,16 @@ class TaskService:
             "resolved_at": None,
             "tool_request": request_to_dict(request),
             "reasons": self._decision_reasons(request.request_id),
+            "impact_preview": self._impact_preview(request),
         }
 
     def decide(self, approval_id: str, approved: bool) -> Dict[str, object]:
+        # Two browser requests may reach the same approval concurrently. Keep
+        # the pending check, gateway resolution and status update atomic.
+        with self._decision_lock:
+            return self._decide_locked(approval_id, approved)
+
+    def _decide_locked(self, approval_id: str, approved: bool) -> Dict[str, object]:
         assert self.gateway is not None
         approval = self._approvals.get(approval_id)
         if approval is None:
@@ -464,6 +535,8 @@ class TaskService:
                 self.coordinator.cancel(str(task["task_id"]))
             else:
                 self.gateway.pending.pop(approval_id, None)
+            if task is not None and task["scenario"] == "recovery":
+                self._file_failures_pending = 0
             if task is not None:
                 self._set_status(task, "EXPIRED")
                 self._record_service_event(
@@ -475,6 +548,53 @@ class TaskService:
             return dict(approval)
 
         task = self._tasks.get(str(approval["task_id"]))
+        impact = approval.get("impact_preview")
+        if (
+            approved
+            and isinstance(impact, dict)
+            and impact.get("kind") == "FILE_UPDATE"
+        ):
+            path = str(impact["path"])
+            if (
+                content_sha256(self.workspace.files.get(path))
+                != impact["before_sha256"]
+            ):
+                if task is not None and task["scenario"] == "activity":
+                    assert self.coordinator is not None
+                    core = self.coordinator.cancel(
+                        str(task["task_id"]), restore_snapshot=False
+                    )
+                    self._sync_activity(task, core)
+                    if core.current_step:
+                        self._record_service_event(
+                            str(task["task_id"]),
+                            "PARTIAL_EFFECT_RETAINED",
+                            {
+                                "completed_steps": core.current_step,
+                                "summary": "先前已执行的步骤保留，需人工核对后续处理。",
+                            },
+                            approval_id,
+                        )
+                else:
+                    self.gateway.resolve(approval_id, approved=False)
+                    if task is not None and task["scenario"] == "recovery":
+                        self._file_failures_pending = 0
+                approval["status"] = "INVALIDATED"
+                approval["resolved_at"] = self._now_fn().isoformat()
+                approval["invalidation_code"] = "TARGET_CHANGED"
+                if task is not None:
+                    if task["scenario"] != "activity":
+                        self._set_status(task, "CANCELLED")
+                    self._record_service_event(
+                        str(task["task_id"]),
+                        "APPROVAL_INVALIDATED",
+                        {
+                            "code": "TARGET_CHANGED",
+                            "summary": "目标文件在等待审批期间变化，旧审批已失效。",
+                        },
+                        approval_id,
+                    )
+                return dict(approval)
         if task is not None and task["scenario"] == "activity":
             assert self.coordinator is not None
             core = self.coordinator.resolve(str(task["task_id"]), approved)
@@ -491,6 +611,8 @@ class TaskService:
         if task is None:  # pragma: no cover
             return dict(approval)
         if not approved:
+            if task["scenario"] == "recovery":
+                self._file_failures_pending = 0
             self._set_status(task, "REJECTED")
             return dict(approval)
         if task["scenario"] == "recovery" and execution.status in {

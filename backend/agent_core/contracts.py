@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from backend.models import ToolRequest, TrustLevel
 
@@ -24,6 +24,7 @@ class ActivitySpec:
     source_trust: TrustLevel = TrustLevel.USER_CONFIRMED
     update_shared_file: bool = True
     reference_signals: Optional[Dict[str, Any]] = None
+    schedule_assignments: Tuple[Tuple[int, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,9 +45,10 @@ class OrchestrationPlan:
     steps: List[ToolRequest]
     evidence: List[AgentEvidence]
     provider: str
+    execution_id: Optional[str] = None
 
     def summary(self) -> Dict[str, Any]:
-        return {
+        summary = {
             "provider": self.provider,
             "step_count": len(self.steps),
             "steps": [
@@ -59,6 +61,9 @@ class OrchestrationPlan:
             ],
             "agent_evidence": [item.to_dict() for item in self.evidence],
         }
+        if self.execution_id is not None:
+            summary["execution_id"] = self.execution_id
+        return summary
 
 
 class PlanningAdapter(Protocol):

@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "entries": {
+    "POLICY_MATCHED": {"meaning": "请求匹配当前工具策略与任务授权。", "next_step": "核对执行结果与任务轨迹。", "rule_ref": "config/policies.json"},
+    "POLICY_NOT_FOUND": {"meaning": "当前 Agent 没有该工具的策略。", "next_step": "移除该工具请求；确有业务需要时由管理员评估并配置策略。", "rule_ref": "config/policies.json:policies"},
+    "ACTION_DENIED": {"meaning": "策略明确禁止此动作。", "next_step": "改用允许的操作完成任务，不得通过改写提示词绕过。", "rule_ref": "config/policies.json:denied_actions"},
+    "ACTION_NOT_ALLOWED": {"meaning": "动作不在允许清单中。", "next_step": "缩小任务动作，或由管理员评估最小权限变更。", "rule_ref": "config/policies.json:allowed_actions"},
+    "UNTRUSTED_SOURCE_ESCALATION": {"meaning": "外部资料不能自行触发高影响工具动作。", "next_step": "由用户在可信表单重新确认任务目标和范围；资料仅作参考。", "rule_ref": "config/policies.json:external_source_blocked_actions"},
+    "RECIPIENT_DOMAIN_DENIED": {"meaning": "通知目标不属于当前允许的域名。", "next_step": "核对接收地址；需要新增目标时由管理员核验授权后调整策略。", "rule_ref": "config/policies.json:allowed_recipient_domains"},
+    "SENSITIVE_FIELDS_DENIED": {"meaning": "请求包含策略禁止外发的敏感字段。", "next_step": "删除姓名、电话等非必要字段，改用匿名统计或行号。", "rule_ref": "config/policies.json:denied_fields"},
+    "PATH_OUT_OF_SCOPE": {"meaning": "文件路径超出当前活动工作区。", "next_step": "选择任务允许的目录；不要将路径校验交给模型自行判断。", "rule_ref": "config/policies.json:allowed_path_prefixes"},
+    "ACTION_REQUIRES_CONFIRMATION": {"meaning": "共享文件写入属于需人工确认的操作。", "next_step": "查看版本差异和影响范围，确认无误后由用户批准。", "rule_ref": "config/policies.json:confirmation_actions"},
+    "BULK_ACTION_REQUIRES_CONFIRMATION": {"meaning": "接收人数超过自动执行阈值。", "next_step": "核对人数与接收对象；确需群发时由用户批准。", "rule_ref": "config/policies.json:confirmation_recipient_count"},
+    "TASK_PASSPORT_VIOLATION": {"meaning": "工具、动作或参数不符合本次任务护照。", "next_step": "停止当前请求，用经用户确认的新任务重新签发最小范围护照。", "rule_ref": "backend/policy_engine/passport.py:validate_passport"},
+    "TASK_PASSPORT_REPLAY": {"meaning": "同一授权请求已经使用。", "next_step": "检查任务结果；确需再次执行时重新取得用户授权。", "rule_ref": "backend/policy_engine/passport.py:PassportRegistry.consume"}
+  }
+}

@@ -10,6 +10,7 @@ from backend.agent_core import (
 from backend.agent_core.permission_preview import preview_activity_permissions
 from backend.bootstrap import build_runtime
 from backend.models import ToolRequest, TrustLevel
+from backend.policy_guidance import explain_policy
 
 
 class AgentGuardMCPService:
@@ -125,12 +126,16 @@ class AgentGuardMCPService:
             "policy_mode": "deterministic",
             "registered_tools": [
                 "preview_activity",
+                "explain_policy",
                 "runtime_status",
             ],
             "circuits": self.gateway.recovery.breaker.states()
             if self.gateway.recovery
             else {},
         }
+
+    def explain_policy(self, reason_code: str) -> Dict[str, Any]:
+        return explain_policy(reason_code)
 
     @staticmethod
     def _trust_level(value: str) -> TrustLevel:

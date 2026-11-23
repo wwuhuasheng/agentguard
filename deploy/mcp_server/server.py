@@ -46,6 +46,13 @@ def preview_activity(
 
 
 @mcp.tool()
+def explain_policy(reason_code: str) -> Dict[str, Any]:
+    """Explain a known rule code and safe next step; never grant authority."""
+
+    return service.explain_policy(reason_code)
+
+
+@mcp.tool()
 def runtime_status() -> Dict[str, Any]:
     """Return MCP runtime health, policy mode, tools and circuit states."""
 

@@ -4,11 +4,15 @@
 
 赛题 2 的资源邮件要求**先上传一次有效初赛材料，再由各队员领取积分兑换代金券**。领取流程见 [`competition-resource-claim.md`](competition-resource-claim.md)。因此，不应把购买 MaaS 或云服务器当成开始开发的前置条件。
 
-在代金券券种和适用范围核实前，先使用 AgentArts 体验版的控制台能力：申请公测、免费开通体验版、创建工作流、在平台内试运行并记录节点输入输出。平台首次赠送的 200 万模型 Token 仅用于模型调测和智能体试运行，**不覆盖发布后从我们的后端/前端发起的正式 API 调用**。目前的 `feature/agentarts-cloud-bridge` 正属于后者；未取得适用代金券或明确预算前，不启用它的真实云端调用。体验版自身有额度限制，开通套餐时可能自动启用按需计费，部署前还需检查日志、指标、调用链等依赖服务的计费选项。
+2026 年 11 月 15 日用户截图显示：华为云账号已进入 AgentArts 总览，但顶部仍显示“仅对已获取公测权限的用户开放全部功能体验”和“立即申请公测”。用户随后报告**已提交公测申请，等待审核**；不能把总览页可见或申请已提交当成已开通服务。华为文档称申请审核预计 5 个工作日。获批后，账号持有人需阅读并同意《AgentArts服务声明》再免费开通体验版；平台会自动开通 CU 按需计费。此后才能创建工作流、在平台内试运行并记录节点输入输出。平台首次赠送的 200 万模型 Token 仅用于模型调测和智能体试运行，**不覆盖发布后从我们的后端/前端发起的正式 API 调用**。目前的 `feature/agentarts-cloud-bridge` 正属于后者；未核实具体代金券适用性及预算前，不启用它的真实云端调用。体验版自身有额度限制，部署前还需检查日志、指标、调用链等依赖服务的计费选项。
+
+2026 年 11 月 18 日控制台实查：经用户明确确认，已勾选《AgentArts服务声明》并点击“免费开通”。随后出现“周边依赖服务开通及授权”弹窗，列出 APM、AOM、LTS、SWR、AgentIdentity、AgentGateway 等服务。按用户选择跳过了这些额外授权，**未点击“开通授权”**。账号已能创建任务型工作流并完成模型节点试运行；尚未在“资源与订阅”核对体验版显示“生效中”。50 元代金券能否抵扣这些具体服务及所在区域仍需逐项核对。平台免费模型调测/智能体试运行与发布后 API 调用的额度不同。
+
+同日已在西南-贵阳一控制台创建任务型工作流“御界 AgentGuard 可信执行分析”，工作流 ID 为 `be5c6a9e-5bef-4c7e-b640-5db2bfbdc5ef`，状态“开发中”。开始节点已配置 `query` 与下述九个结构化变量，其中 `recipient_count` 为 Integer、`update_shared_file` 为 Boolean；业务规划、内容隔离、行为守卫三个模型角色已保存提示词和 `conclusion` 输出，行为守卫风险信号键名已核对为 `reference_signals`。证据组装代码节点已写入函数并绑定六项输入，画布及结束节点均已引用代码节点的 `agent_evidence_json`。首次试运行在内容隔离节点因多余的必填字段 `raw_output` 失败（102056）；三个模型节点统一移除该字段后，普通活动和外部资料风险两组虚构案例分别在约 52.62 秒和 48.10 秒内全链路成功，后者的调用详情显示六个节点均成功。真实平台的**构建、编排及试运行**已有证据；尚未提交版本、部署、调用运行时 API 或验证后端云端桥接。
 
 初次控制台试运行的最小工作流：
 
-可直接按 [`agentarts-workflow-kit.md`](agentarts-workflow-kit.md) 中的变量、三角色提示词与验收样例搭建；该文件目前仍是本地草案。
+两组试运行的输入与结果记录见 [`agentarts-workflow-kit.md`](agentarts-workflow-kit.md)。下一步需保存截图与录像，再核查版本提交、部署、API 和只读 MCP 接入。
 
 1. 开始节点输入 `title`、`starts_at`、`location`、`recipient`、`recipient_count`、`notice_content`、`source_trust`、`update_shared_file`（布尔值），只填 `example.org` 等脱敏模拟数据；
 2. 业务规划节点输出目标与所选事务步骤的**分析证据**，不得生成可执行的新收件人或新工具；
@@ -23,12 +27,13 @@
 ## 云端规划桥接（代码已就绪，尚待真实账号验证）
 
 现有控制台 `live` 模式可通过后端调用 AgentArts 已发布工作流。启用后，
-`agent_plan.provider` 显示 `huawei-agentarts-workflow`；若云端报错或输出不符合约定，
+`agent_plan.provider` 显示 `huawei-agentarts-workflow`；平台若返回有效的 `execution_id`，任务规划摘要和前端轨迹页会显示该 ID，便于在 AgentArts 调用链中核对同一次运行。若云端报错或输出不符合约定，
 任务创建返回 `502`，**不会静默退回本地模拟结果**。API Key 只保留在后端进程，
 前端不接触密钥。当前云端只负责分析证据，真正的工具参数由用户输入确定，
+收件地址和通知正文在云端开始节点只填固定占位值，真实值只进入本地策略与执行链；
 再经任务护照、策略网关和人工审批；工具仍是内存模拟，不会发送真实邮件。
 
-先在 AgentArts 创建并发布一个工作流，开始节点定义以下必填变量，名称必须一致：
+控制台任务型模板自带 `query`（字符串，当前为可选），后端已将最小模型分析摘要写入此字段，不包含收件地址或通知正文。另有以下九个结构化变量，名称必须一致：
 `title`、`starts_at`、`location`、`recipient`、`recipient_count`（整数）、
 `notice_content`、`source_trust`、`update_shared_file`（布尔值，`false` 表示不申请文件更新权限）、`reference_signals_json`（字符串，仅含后端生成的风险布尔值/计数）。建议依次编排业务规划、内容隔离、行为守卫三个
 Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例：
@@ -45,11 +50,13 @@ Agent/LLM 节点；最后输出 `agent_evidence_json` 字符串。输出示例�
 
 可将这个 JSON 放在工作流结束节点的 `user_fields.agent_evidence_json`，或作为
 `responseContent` 返回；工作流必须产生 `workflow_finished` 且状态为 `succeeded`。
-后端只接收这三条证据。即使模型输出 `steps`、工具参数或更高的信任级别，
+后端只接收这三条证据。角色结论限制为 600 字；证据字段由本地用户参数重新计算，云端输出中的未知字段被丢弃、与本地事实冲突的字段使任务失败。即使模型输出 `steps`、工具参数或更高的信任级别，
 它们也不会进入执行计划。平台工作流可用 MCP 工具 `runtime_status` 验证连接，
 并用 `preview_activity` 展示确定性规则如何判定本次选择的两步或三步事务。预览结果不签发
 实际授权、不创建任务、不审批，也不执行模拟工具；用户输入与模型输出必须由
 可信演示后端分开处理。
+
+当前源码另提供只读 `explain_policy(reason_code)`：对预览返回的原因码给出版本化规则说明、内部规则引用和可执行的安全处理建议。说明资产在 [`config/policy_guidance.json`](../config/policy_guidance.json)，不能当作授权或法规结论。新增三工具版本已通过本地单元测试；[`scripts/verify_mcp_protocol.py`](../scripts/verify_mcp_protocol.py) 可在启动本地容器后用固定的 MCP SDK 版本检查三工具发现与调用，但尚未实际运行该协议脚本、完成 ARM64 容器或 AgentArts 云端调用验证。原文后续的 2026 年 11 月容器记录只对应旧双工具版本。
 
 账号侧需要完成：开通 AgentArts；接入可用于 API 调用的 MaaS/第三方模型；
 提交工作流版本并勾选“部署至实例”；入站认证选 API Key；复制完整调用路径，
@@ -89,8 +96,8 @@ uvicorn backend.api.server:app --port 8000
 
 AgentArts 负责模型、提示词、工作流、多 Agent 协作、平台调用链和评估；演示后端负责事务暂停/恢复、人工审批、确定性安全执行边界和业务 Trace。比赛演示应真实呈现 AgentArts 工作流及其只读 MCP 调用，本地适配器只用于离线回归，不能作为已经接入 AgentArts 的证明。
 
-**安全边界：**公开给 AgentArts 的 MCP Server 只注册 `preview_activity` 和
-`runtime_status`。模型不能通过 MCP 创建任务、读取任务护照、提交原始工具请求、
+**安全边界：**公开给 AgentArts 的 MCP Server 只注册 `preview_activity`、
+`explain_policy` 和 `runtime_status` 三个只读工具。模型不能通过 MCP 创建任务、读取任务护照、提交原始工具请求、
 取消任务或批准待确认操作。预览中的 `source_trust` 只是未核验的假设，绝不转化为
 执行授权。现有演示 HTTP API 还没有用户身份认证，禁止直接公网开放；若要云端
 互动演示，须先补登录、会话绑定、审批身份校验和服务间认证。
@@ -172,5 +179,5 @@ curl -X POST http://127.0.0.1:8080/mcp \
 - 服务状态仍保存在单进程内存中，只适合初赛原型和单副本演示；
 - 演示 API 无真实用户认证，不可直接部署成公网可写服务；
 - 正式多副本部署前需将任务、护照、审批和Trace持久化；
-- 真实AgentArts工作流、调用链截图和平台评估仍待账号登录、平台可用及模型资源确认后完成；2026 年 11 月 11 日 Chrome 跳转华为云登录页时出现 `ERR_CONNECTION_CLOSED`，因此未开展云端操作；
+- AgentArts 任务型工作流、三个角色、代码节点和结束节点已配置，两组完整试运行成功；版本提交、部署、运行时 API、MCP 云端调用、截图归档和平台评估仍待完成；2026 年 11 月 15 日已核对到账一张 50 元代金券，但完整适用产品及区域仍未核清；
 - 不得在仓库提交API Key、Token或`.agentarts_config.yaml`。

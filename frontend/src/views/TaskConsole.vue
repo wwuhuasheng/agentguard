@@ -34,7 +34,7 @@ const s = useConsoleStore(),
   recipientCount = ref(12),
   updateSharedFile = ref(true),
   files = ref<FileMeta[]>([]),
-  reference = ref<ActivityReference | null>(null),
+  references = ref<ActivityReference[]>([]),
   input = ref<HTMLInputElement>(),
   form = ref<HTMLElement>(),
   query = ref(''),
@@ -45,11 +45,26 @@ const previewBusy = ref(false)
 const referenceReview = ref<ReferenceReviewPreview | null>(null)
 const referenceReviewKey = ref('')
 const referenceBusy = ref(false)
+const adoptedScheduleHash = ref('')
 const currentReferenceKey = computed(() =>
-  JSON.stringify([reference.value?.name, reference.value?.content, recipientCount.value])
+  JSON.stringify([references.value, recipientCount.value])
 )
 const visibleReferenceReview = computed(() =>
   referenceReviewKey.value === currentReferenceKey.value ? referenceReview.value : null
+)
+const scheduleCanBeAdopted = computed(() => {
+  const review = visibleReferenceReview.value
+  const proposal = review?.schedule_proposal
+  return Boolean(
+    updateSharedFile.value && review?.source_summary.format === 'csv' &&
+    review.source_summary.row_count === recipientCount.value &&
+    proposal && proposal.unassigned_indices.length === 0 &&
+    proposal.assignments.length === recipientCount.value
+  )
+})
+const scheduleIsAdopted = computed(() =>
+  scheduleCanBeAdopted.value &&
+  adoptedScheduleHash.value === visibleReferenceReview.value?.source_summary.sha256
 )
 const currentPreviewKey = computed(() =>
   JSON.stringify([
@@ -119,7 +134,8 @@ async function submit() {
           update_shared_file: updateSharedFile.value,
         }
       : undefined,
-    reference.value || undefined
+    references.value.length ? references.value : undefined,
+    scheduleIsAdopted.value ? adoptedScheduleHash.value : undefined
   )
   if (t) void router.push('/trace')
 }
@@ -160,8 +176,14 @@ async function previewPermissions() {
     previewBusy.value = false
   }
 }
+async function applyLeastPrivilege() {
+  if (!visiblePreview.value?.least_privilege_option || !updateSharedFile.value) return
+  updateSharedFile.value = false
+  adoptedScheduleHash.value = ''
+  await previewPermissions()
+}
 async function previewReference() {
-  if (!reference.value) return s.notify('请先选择一份脱敏 TXT/CSV 资料。')
+  if (!references.value.length) return s.notify('请先选择脱敏 TXT/CSV 资料。')
   const count = Number(recipientCount.value)
   if (!Number.isInteger(count) || count < 1 || count > 1000)
     return s.notify('请填写 1–1000 的接收人数。')
@@ -169,7 +191,7 @@ async function previewReference() {
   referenceBusy.value = true
   try {
     const result = await liveApi.previewReference({
-      reference: reference.value,
+      references: references.value,
       recipient_count: count,
     })
     if (key === currentReferenceKey.value) {
@@ -192,21 +214,36 @@ function adoptActivityDraft() {
   location.value = draft.location
   s.notify('已填入时间和地点；请核对后再预览权限并提交。')
 }
+function adoptSchedule() {
+  if (!scheduleCanBeAdopted.value) return
+  adoptedScheduleHash.value = visibleReferenceReview.value!.source_summary.sha256
+  s.notify('已采纳匿名排班；共享文件更新仍须人工审批。')
+}
+function instructionLines(sourceName?: string) {
+  const review = visibleReferenceReview.value
+  const source = review?.source_summaries?.find((item) => item.name === sourceName) || review?.source_summary
+  return source?.instruction_line_numbers || []
+}
 async function addFiles(e: Event) {
   const list = (e.target as HTMLInputElement).files
   if (!list) return
   if (s.mode === 'live') {
-    const file = list[0]
-    if (file) {
-      reference.value = null
-      files.value = []
+    for (const file of list) {
       try {
         if (!/\.(txt|csv)$/i.test(file.name)) throw new Error('Live 模式仅支持 TXT/CSV。')
         if (file.size < 1 || file.size > 32 * 1024)
           throw new Error('资料须为 1–32 KB 的脱敏文本。')
+        const format = file.name.toLowerCase().endsWith('.csv') ? 'csv' : 'txt'
+        const existingIndex = references.value.findIndex((r) => r.name.toLowerCase().endsWith(`.${format}`))
         const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
-        reference.value = { name: file.name, content }
-        files.value = [{ name: file.name, size: file.size, type: file.type }]
+        adoptedScheduleHash.value = ''
+        if (existingIndex >= 0) {
+          references.value.splice(existingIndex, 1, { name: file.name, content })
+          files.value.splice(existingIndex, 1, { name: file.name, size: file.size, type: file.type })
+        } else {
+          references.value.push({ name: file.name, content })
+          files.value.push({ name: file.name, size: file.size, type: file.type })
+        }
       } catch (error) {
         s.notify(error instanceof Error ? error.message : '读取资料失败')
       }
@@ -230,7 +267,10 @@ async function addFiles(e: Event) {
 }
 function removeFile(index: number) {
   files.value.splice(index, 1)
-  if (s.mode === 'live') reference.value = null
+  if (s.mode === 'live') {
+    references.value.splice(index, 1)
+    adoptedScheduleHash.value = ''
+  }
 }
 function openTask(id: string) {
   s.select(id)
@@ -352,10 +392,19 @@ function focusForm() {
           </button>
           <div v-if="visiblePreview" class="permission-preview" aria-label="本次权限预览">
             <p class="helper">{{ visiblePreview.warning }}</p>
+            <article v-if="visiblePreview.least_privilege_option" class="permission-preview-item" aria-label="最小权限方案">
+              <strong>可选的最小权限方案</strong>
+              <p>若不更新共享文件，可将拟申请的工具操作从 {{ visiblePreview.least_privilege_option.before.tools }} 个减至 {{ visiblePreview.least_privilege_option.after.tools }} 个，需确认的操作从 {{ visiblePreview.least_privilege_option.before.confirmations }} 个减至 {{ visiblePreview.least_privilege_option.after.confirmations }} 个。</p>
+              <p class="helper">{{ visiblePreview.least_privilege_option.condition }}</p>
+              <button class="button" type="button" :disabled="previewBusy" @click="applyLeastPrivilege">采用并重新预览</button>
+            </article>
             <article v-for="step in visiblePreview.steps" :key="step.tool_name" class="permission-preview-item">
               <div class="row between"><strong>{{ step.description }}</strong><StatusBadge :value="step.decision" /></div>
               <small>{{ step.scope }}</small>
               <p>{{ step.reason_messages.join('；') }}</p>
+              <p v-for="guide in step.guidance || []" :key="guide.reason_code" class="helper">
+                建议：{{ guide.next_step }} <small>依据 {{ guide.rule_ref }}</small>
+              </p>
             </article>
           </div>
         </template><template v-else
@@ -378,10 +427,10 @@ function focusForm() {
           </div></template
         ><label class="upload-box"
           ><Upload :size="21" /><span
-            ><strong>选择活动资料</strong><small>{{ s.mode === 'live' ? '脱敏 TXT / CSV · 最多 32 KB' : 'PDF / CSV / TXT · 每个不超过 10 MB' }}</small></span
+            ><strong>选择活动资料</strong><small>{{ s.mode === 'live' ? '脱敏 TXT + CSV · 各一份，每份最多 32 KB' : 'PDF / CSV / TXT · 每个不超过 10 MB' }}</small></span
           ><Plus :size="17" /><input
             type="file"
-            :multiple="s.mode === 'mock'"
+            multiple
             :accept="s.mode === 'live' ? '.txt,.csv' : '.pdf,.csv,.txt,.md,.xlsx'"
             @change="addFiles"
         /></label>
@@ -389,7 +438,7 @@ function focusForm() {
           {{
             s.mode === 'mock'
               ? '附件仅记录文件名和大小；本演示使用预置资料，不读取附件内容。'
-              : '仅使用自制或已脱敏资料；后端只保留摘要和风险标记，不保存正文，也不向 AgentArts 发送正文。'
+              : '仅使用自制或已脱敏资料；TXT/CSV 正文会送到本地演示后端核对，任务状态只保留摘要和风险标记，原文不发给 AgentArts。'
           }}
         </p>
         <div v-if="files.length" class="file-list">
@@ -406,7 +455,7 @@ function focusForm() {
             </button>
           </div>
         </div>
-        <template v-if="s.mode === 'live' && reference">
+        <template v-if="s.mode === 'live' && references.length">
           <button class="button" type="button" :disabled="referenceBusy" @click="previewReference">
             <FileText :size="16" />{{ referenceBusy ? '正在核对…' : '核对资料与通知人数' }}
           </button>
@@ -419,11 +468,11 @@ function focusForm() {
               <small>{{ visibleReferenceReview.activity_draft.warning }}</small>
               <button class="button" type="button" @click="adoptActivityDraft">核对后填入时间地点</button>
             </article>
-            <article v-for="check in visibleReferenceReview.checks" :key="check.code" class="permission-preview-item">
-              <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }}</strong>
+            <article v-for="(check, index) in visibleReferenceReview.checks" :key="`${check.code}-${index}`" class="permission-preview-item">
+              <strong>{{ check.severity === 'REVIEW' ? '需人工核对' : '信息提示' }} · {{ check.source_name || visibleReferenceReview.source_summary.name }}</strong>
               <p>{{ check.message }}</p>
-              <small v-if="check.code === 'INSTRUCTION_REVIEW' && visibleReferenceReview.source_summary.instruction_line_numbers?.length">
-                疑似指令位于资料第 {{ visibleReferenceReview.source_summary.instruction_line_numbers.join('、') }} 行；原文不会进入任务状态。
+              <small v-if="check.code === 'INSTRUCTION_REVIEW' && instructionLines(check.source_name).length">
+                疑似指令位于资料第 {{ instructionLines(check.source_name).join('、') }} 行；原文不会进入任务状态。
               </small>
             </article>
             <article v-if="visibleReferenceReview.schedule_proposal" class="permission-preview-item" aria-label="匿名排班建议">
@@ -437,6 +486,11 @@ function focusForm() {
                 时段不明确，待人工安排：第 {{ visibleReferenceReview.schedule_proposal.unassigned_indices.join('、') }} 行
               </p>
               <small>{{ visibleReferenceReview.schedule_proposal.warning }}</small>
+              <button v-if="scheduleCanBeAdopted && !scheduleIsAdopted" class="button" type="button" @click="adoptSchedule">
+                核对后采纳，写入待审批共享文件
+              </button>
+              <p v-if="scheduleIsAdopted">已采纳：提交后须审批共享文件更新；修改资料、人数或取消文件权限将自动撤销本次采纳。</p>
+              <p v-else-if="!scheduleCanBeAdopted" class="helper">仅当人数与资料行数一致、所有时段明确且保留文件更新权限时，才能采纳。</p>
             </article>
           </div>
         </template>

@@ -185,9 +185,9 @@ const userInitial = computed(() => displayedUserName.value.trim().charAt(0).toUp
           <X :size="19" />
         </button>
       </div>
-      <h2>从演示到真实执行</h2>
+      <h2>从回放到本地受控试运行</h2>
       <p>
-        当前数据源：<strong>{{ s.mode === 'mock' ? '本地 Mock' : '真实后端' }}</strong>
+        当前数据源：<strong>{{ s.mode === 'mock' ? '本地 Mock 回放' : '本地模拟后端' }}</strong>
       </p>
       <ol class="guide-list">
         <li>
@@ -195,23 +195,19 @@ const userInitial = computed(() => displayedUserName.value.trim().charAt(0).toUp
           <p>在任务控制台选择场景并启动，或从侧栏进入回放。所有示例使用脱敏数据。</p>
         </li>
         <li>
-          <strong>与同学 A 联调</strong>
+          <strong>启用 Live 模式</strong>
           <p>
             复制 .env.example 为 .env.local，设置 VITE_DATA_MODE=live 和
             VITE_API_BASE_URL，然后重启开发服务器。
           </p>
         </li>
         <li>
-          <strong>确认接口契约</strong>
-          <p>
-            查看项目
-            docs/INTEGRATION.md。任务、审批详情及恢复事件为待确认的适配对象，现有后端尚未实现这些
-            HTTP 接口。
-          </p>
+          <strong>核对执行链</strong>
+          <p>活动任务、权限预览、审批与恢复接口已接入模拟后端；操作过程见 docs/INTEGRATION.md。</p>
         </li>
         <li>
           <strong>评测与文件边界</strong>
-          <p>评测页是样例数据；附件仅展示本地文件名和大小，不解析文件内容或上传至服务器。</p>
+          <p>评测页仍是合成展示数据。Mock 回放只记录附件名和大小；Live 模式会把所选脱敏 TXT/CSV 正文送到本地演示后端核对，后端只保留摘要和风险标记，不把原文发给 AgentArts。</p>
         </li>
       </ol>
       <button class="button primary full" @click="helpDialog?.close()">知道了</button>
